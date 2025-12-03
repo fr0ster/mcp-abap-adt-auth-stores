@@ -100,7 +100,7 @@ describe('XsuaaServiceKeyParser', () => {
       expect(result.uaa.clientsecret).toBe(validKey.clientsecret);
     });
 
-    it('should prioritize apiurl over url for UAA', () => {
+    it('should use url (not apiurl) for UAA authorization', () => {
       const validKey = {
         url: 'https://test.authentication.sap.hana.ondemand.com',
         apiurl: 'https://api.test.authentication.sap.hana.ondemand.com',
@@ -109,7 +109,9 @@ describe('XsuaaServiceKeyParser', () => {
       };
 
       const result = parser.parse(validKey) as any;
-      expect(result.uaa.url).toBe('https://api.test.authentication.sap.hana.ondemand.com');
+      // For OAuth2 authorization endpoint, use 'url' (not 'apiurl')
+      // 'apiurl' is for API calls, authorization uses base 'url'
+      expect(result.uaa.url).toBe('https://test.authentication.sap.hana.ondemand.com');
     });
 
     it('should preserve abap object if present', () => {

@@ -53,8 +53,9 @@ export class XsuaaServiceKeyParser {
     }
 
     // Normalize to standard format
-    // Prioritize apiurl over url for UAA authorization (if present)
-    const uaaUrl = rawData.apiurl || rawData.url;
+    // For authorization (OAuth2 authorize endpoint), use 'url' (not 'apiurl')
+    // 'apiurl' is for token endpoint, but authorization uses base 'url'
+    const uaaUrl = rawData.url;
     return {
       uaa: {
         url: uaaUrl,
