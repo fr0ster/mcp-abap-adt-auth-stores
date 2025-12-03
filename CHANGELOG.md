@@ -8,15 +8,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2024-12-04
 
 ### Added
-- Initial release
-- BTP stores (BtpServiceKeyStore, BtpSessionStore, SafeBtpSessionStore)
-- ABAP stores (AbapServiceKeyStore, AbapSessionStore, SafeAbapSessionStore)
-- XSUAA stores (XsuaaServiceKeyStore, XsuaaSessionStore, SafeXsuaaSessionStore)
-- Abstract base classes for extending
-- Utility functions (pathResolver, constants)
-- Service key loaders
+- Initial release of unified stores package
+- **BTP Stores**:
+  - `BtpServiceKeyStore` - Reads XSUAA service keys for base BTP connections
+  - `BtpSessionStore` - File-based store for base BTP sessions (uses `XSUAA_*` env vars)
+  - `SafeBtpSessionStore` - In-memory store for base BTP sessions
+- **ABAP Stores**:
+  - `AbapServiceKeyStore` - Reads ABAP service keys with nested `uaa` object
+  - `AbapSessionStore` - File-based store for ABAP sessions (uses `SAP_*` env vars)
+  - `SafeAbapSessionStore` - In-memory store for ABAP sessions
+- **XSUAA Stores**:
+  - `XsuaaServiceKeyStore` - Reads XSUAA service keys (direct format)
+  - `XsuaaSessionStore` - File-based store for XSUAA sessions (uses `XSUAA_*` env vars)
+  - `SafeXsuaaSessionStore` - In-memory store for XSUAA sessions
+- **Abstract Base Classes**:
+  - `AbstractServiceKeyStore` - Base class for service key stores with file I/O
+  - `AbstractJsonSessionStore` - Base class for file-based session stores
+  - `AbstractSafeSessionStore` - Base class for in-memory session stores
+- **Utilities**:
+  - `pathResolver` - Resolve search paths and find files in multiple directories
+  - `constants` - Environment variable name constants for ABAP, BTP, and XSUAA
+  - Service key loaders for ABAP and XSUAA formats
+- **Testing**:
+  - Unit tests for parsers (AbapServiceKeyParser, XsuaaServiceKeyParser)
+  - Unit tests for service key stores with mocked file system
+  - Jest configuration with TypeScript support
 
 ### Changed
-- Merged `@mcp-abap-adt/auth-stores-btp` and `@mcp-abap-adt/auth-stores-xsuaa` into single package
-- Eliminated code duplication in abstract classes and utilities
+- Merged `@mcp-abap-adt/auth-stores-btp` and `@mcp-abap-adt/auth-stores-xsuaa` into single unified package
+- Eliminated code duplication in abstract classes and utility functions
+- Unified constants for all store types (ABAP, BTP, XSUAA)
+- Consistent API across all store implementations
 
+### Dependencies
+- `@mcp-abap-adt/auth-broker` ^0.1.6 - Interface definitions (`IServiceKeyStore`, `ISessionStore`, `IAuthorizationConfig`, `IConnectionConfig`, `IConfig`)
+- `dotenv` ^17.2.1 - Environment variable parsing for `.env` files
