@@ -1,0 +1,63 @@
+{
+  "name": "@mcp-abap-adt/auth-stores",
+  "version": "0.1.0",
+  "description": "Stores for MCP ABAP ADT auth-broker - BTP, ABAP, and XSUAA implementations",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "abap",
+    "sap",
+    "adt",
+    "jwt",
+    "authentication",
+    "token",
+    "store",
+    "btp",
+    "abap",
+    "xsuaa",
+    "mcp",
+    "abap-adt"
+  ],
+  "author": "Oleksii Kyslytsia <oleksij.kyslytsja@gmail.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/fr0ster/mcp-abap-adt-auth-stores#readme",
+  "bugs": {
+    "url": "https://github.com/fr0ster/mcp-abap-adt-auth-stores/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fr0ster/mcp-abap-adt-auth-stores.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "build": "npm run clean --silent && npx tsc -p tsconfig.json",
+    "build:fast": "npx tsc -p tsconfig.json",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "test:check": "npx tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@mcp-abap-adt/auth-broker": "^0.1.6",
+    "dotenv": "^17.2.1"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.2.1",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.2.5",
+    "typescript": "^5.9.2"
+  }
+}
+
