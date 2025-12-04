@@ -4,7 +4,7 @@
  */
 
 import { BtpSessionStore } from '../../../stores/btp/BtpSessionStore';
-import type { IConfig } from '@mcp-abap-adt/auth-broker';
+import type { IConfig } from '@mcp-abap-adt/interfaces';
 import {
   loadTestConfig,
   hasRealConfig,

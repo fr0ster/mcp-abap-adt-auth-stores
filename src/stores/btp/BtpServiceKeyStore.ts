@@ -2,7 +2,7 @@
  * Base BTP Service key store - reads XSUAA service keys from {destination}.json files
  */
 
-import type { IServiceKeyStore, IAuthorizationConfig, IConnectionConfig, IConfig } from '@mcp-abap-adt/auth-broker';
+import type { IServiceKeyStore, IAuthorizationConfig, IConnectionConfig, IConfig } from '@mcp-abap-adt/interfaces';
 import { JsonFileHandler } from '../../utils/JsonFileHandler';
 import { XsuaaServiceKeyParser } from '../../parsers/xsuaa/XsuaaServiceKeyParser';
 

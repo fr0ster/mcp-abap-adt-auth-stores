@@ -2,7 +2,7 @@
  * ABAP Service key store - reads ABAP service keys from {destination}.json files
  */
 
-import type { IServiceKeyStore, IAuthorizationConfig, IConnectionConfig, IConfig } from '@mcp-abap-adt/auth-broker';
+import type { IServiceKeyStore, IAuthorizationConfig, IConnectionConfig, IConfig } from '@mcp-abap-adt/interfaces';
 import { JsonFileHandler } from '../../utils/JsonFileHandler';
 import { AbapServiceKeyParser } from '../../parsers/abap/AbapServiceKeyParser';
 

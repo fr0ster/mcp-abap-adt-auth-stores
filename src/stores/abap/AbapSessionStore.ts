@@ -6,8 +6,7 @@
  * This extends base BTP store by adding sapUrl requirement.
  */
 
-import type { IAuthorizationConfig, IConnectionConfig, ISessionStore } from '@mcp-abap-adt/auth-broker';
-import type { IConfig } from '@mcp-abap-adt/auth-broker';
+import type { IAuthorizationConfig, IConnectionConfig, ISessionStore, IConfig } from '@mcp-abap-adt/interfaces';
 import { loadEnvFile } from '../../storage/abap/envLoader';
 import { saveTokenToEnv } from '../../storage/abap/tokenStorage';
 import * as fs from 'fs';

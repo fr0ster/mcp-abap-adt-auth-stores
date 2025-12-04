@@ -5,7 +5,7 @@
  * Does not persist to disk - suitable for secure environments.
  */
 
-import type { IConnectionConfig, ISessionStore, IAuthorizationConfig, IConfig } from '@mcp-abap-adt/auth-broker';
+import type { IConnectionConfig, ISessionStore, IAuthorizationConfig, IConfig } from '@mcp-abap-adt/interfaces';
 
 // Internal type for base BTP session storage (without sapUrl)
 interface BtpBaseSessionData {

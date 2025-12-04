@@ -4,7 +4,7 @@
  */
 
 import { AbapSessionStore } from '../../../stores/abap/AbapSessionStore';
-import type { IConfig } from '@mcp-abap-adt/auth-broker';
+import type { IConfig } from '@mcp-abap-adt/interfaces';
 import {
   loadTestConfig,
   hasRealConfig,

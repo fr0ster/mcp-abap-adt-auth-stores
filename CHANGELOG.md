@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.1.3] - 2024-12-04
+
+### Added
+- **Interfaces Package Integration**: Migrated to use `@mcp-abap-adt/interfaces` package for all interface definitions
+  - All interfaces now imported from shared package
+  - Dependency on `@mcp-abap-adt/interfaces@^0.1.0` added
+  - Removed dependency on `@mcp-abap-adt/auth-broker` (interfaces now come from shared package)
+
+### Changed
+- **Interface Imports**: All store implementations now import interfaces from `@mcp-abap-adt/interfaces` instead of `@mcp-abap-adt/auth-broker`
+  - `IServiceKeyStore`, `ISessionStore`, `IAuthorizationConfig`, `IConnectionConfig`, `IConfig` now imported from shared package
+  - Backward compatibility maintained - interfaces remain the same, only import source changed
+
 ## [0.1.2] - 2024-12-04
 
 ### Changed

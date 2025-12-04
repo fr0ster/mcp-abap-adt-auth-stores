@@ -4,7 +4,7 @@
  */
 
 import { XsuaaSessionStore } from '../../../stores/xsuaa/XsuaaSessionStore';
-import type { IConfig } from '@mcp-abap-adt/auth-broker';
+import type { IConfig } from '@mcp-abap-adt/interfaces';
 import {
   loadTestConfig,
   hasRealConfig,

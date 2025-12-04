@@ -5,8 +5,7 @@
  * Stores to {destination}.env files with XSUAA_* variables.
  */
 
-import type { IAuthorizationConfig, IConnectionConfig, ISessionStore } from '@mcp-abap-adt/auth-broker';
-import type { IConfig } from '@mcp-abap-adt/auth-broker';
+import type { IAuthorizationConfig, IConnectionConfig, ISessionStore, IConfig } from '@mcp-abap-adt/interfaces';
 import { loadXsuaaEnvFile } from '../../storage/xsuaa/xsuaaEnvLoader';
 import { saveXsuaaTokenToEnv } from '../../storage/xsuaa/xsuaaTokenStorage';
 import * as fs from 'fs';
