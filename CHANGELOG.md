@@ -5,7 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2024-12-04
+
+### Changed
+- **Architecture Refactoring** - Simplified store architecture
+  - Removed abstract base classes (`AbstractServiceKeyStore`, `AbstractEnvSessionStore`, `AbstractSafeSessionStore`)
+  - Stores now accept a single directory path instead of search paths array
+  - Created `JsonFileHandler` and `EnvFileHandler` utility classes for file operations
+  - All stores implement interfaces directly without inheritance
+
+### Added
+- **File Handlers**:
+  - `JsonFileHandler` - Utility class for reading/writing JSON files
+  - `EnvFileHandler` - Utility class for reading/writing `.env` files
+- **Integration Tests**:
+  - Integration tests for all stores using real files from `test-config.yaml`
+  - Test configuration helpers (`configHelpers.ts`) matching auth-providers format
+  - YAML-based test configuration (`tests/test-config.yaml.template`)
+
+### Fixed
+- **XSUAA Service Key Parser** - Fixed UAA URL extraction for OAuth2 authorization
+  - Now uses `url` field (not `apiurl`) for authorization endpoint
+  - `apiurl` is for API calls, but OAuth2 authorization requires base `url`
+  - This fixes browser authentication for BTP/ABAP connections using XSUAA service keys
+
 ## [0.1.1] - 2024-12-04
+
+### Changed
+- **Architecture Refactoring** - Simplified store architecture
+  - Removed abstract base classes (`AbstractServiceKeyStore`, `AbstractEnvSessionStore`, `AbstractSafeSessionStore`)
+  - Stores now accept a single directory path instead of search paths array
+  - Created `JsonFileHandler` and `EnvFileHandler` utility classes for file operations
+  - All stores implement interfaces directly without inheritance
+
+### Added
+- **File Handlers**:
+  - `JsonFileHandler` - Utility class for reading/writing JSON files
+  - `EnvFileHandler` - Utility class for reading/writing `.env` files
+- **Integration Tests**:
+  - Integration tests for all stores using real files from `test-config.yaml`
+  - Test configuration helpers (`configHelpers.ts`) matching auth-providers format
+  - YAML-based test configuration (`tests/test-config.yaml.template`)
 
 ### Fixed
 - **XSUAA Service Key Parser** - Fixed UAA URL extraction for OAuth2 authorization
@@ -31,7 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `SafeXsuaaSessionStore` - In-memory store for XSUAA sessions
 - **Abstract Base Classes**:
   - `AbstractServiceKeyStore` - Base class for service key stores with file I/O
-  - `AbstractJsonSessionStore` - Base class for file-based session stores
+  - `AbstractEnvSessionStore` - Base class for file-based session stores (works with .env files)
   - `AbstractSafeSessionStore` - Base class for in-memory session stores
 - **Utilities**:
   - `pathResolver` - Resolve search paths and find files in multiple directories

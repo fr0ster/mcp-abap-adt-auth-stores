@@ -14,9 +14,9 @@ npm install @mcp-abap-adt/auth-stores
 
 This package implements the `IServiceKeyStore` and `ISessionStore` interfaces from `@mcp-abap-adt/auth-broker`:
 
-- **Service Key Stores**: Read service key JSON files from configured search paths
+- **Service Key Stores**: Read service key JSON files from a specified directory
 - **Session Stores**: Read/write session data from/to `.env` files or in-memory storage
-- **Abstract Classes**: Base classes for creating custom store implementations
+- **File Handlers**: Utility classes for working with JSON and ENV files
 
 ## Store Types
 
@@ -49,11 +49,11 @@ Session stores manage authentication tokens and configuration:
 ```typescript
 import { BtpServiceKeyStore, BtpSessionStore, SafeBtpSessionStore } from '@mcp-abap-adt/auth-stores';
 
-// Service key store - reads {destination}.json files
-const serviceKeyStore = new BtpServiceKeyStore(['/path/to/service-keys']);
+// Service key store - reads {destination}.json files from directory
+const serviceKeyStore = new BtpServiceKeyStore('/path/to/service-keys');
 
 // File-based session store - reads/writes {destination}.env files
-const sessionStore = new BtpSessionStore(['/path/to/sessions']);
+const sessionStore = new BtpSessionStore('/path/to/sessions');
 
 // In-memory session store (non-persistent)
 const safeSessionStore = new SafeBtpSessionStore();
@@ -65,10 +65,10 @@ const safeSessionStore = new SafeBtpSessionStore();
 import { AbapServiceKeyStore, AbapSessionStore, SafeAbapSessionStore } from '@mcp-abap-adt/auth-stores';
 
 // Service key store - reads ABAP service keys with nested uaa object
-const serviceKeyStore = new AbapServiceKeyStore(['/path/to/service-keys']);
+const serviceKeyStore = new AbapServiceKeyStore('/path/to/service-keys');
 
 // File-based session store - stores ABAP sessions with SAP_* env vars
-const sessionStore = new AbapSessionStore(['/path/to/sessions']);
+const sessionStore = new AbapSessionStore('/path/to/sessions');
 
 // In-memory session store
 const safeSessionStore = new SafeAbapSessionStore();
@@ -80,33 +80,26 @@ const safeSessionStore = new SafeAbapSessionStore();
 import { XsuaaServiceKeyStore, XsuaaSessionStore, SafeXsuaaSessionStore } from '@mcp-abap-adt/auth-stores';
 
 // Service key store - reads XSUAA service keys
-const serviceKeyStore = new XsuaaServiceKeyStore(['/path/to/service-keys']);
+const serviceKeyStore = new XsuaaServiceKeyStore('/path/to/service-keys');
 
 // File-based session store - stores XSUAA sessions
-const sessionStore = new XsuaaSessionStore(['/path/to/sessions']);
+const sessionStore = new XsuaaSessionStore('/path/to/sessions');
 
 // In-memory session store
 const safeSessionStore = new SafeXsuaaSessionStore();
 ```
 
-### Search Paths
+### Directory Configuration
 
-Search paths are resolved in priority order:
-
-1. **Constructor parameter** (highest priority)
-2. **`AUTH_BROKER_PATH` environment variable** (colon/semicolon-separated paths)
-3. **Current working directory** (lowest priority, only if no other paths specified)
+All stores accept a single directory path in the constructor:
 
 ```typescript
-// Single path
-const store = new BtpServiceKeyStore('/path/to/keys');
+// Single directory path
+const store = new BtpServiceKeyStore('/path/to/service-keys');
 
-// Multiple paths
-const store = new BtpServiceKeyStore(['/path1', '/path2', '/path3']);
-
-// Use environment variable
-process.env.AUTH_BROKER_PATH = '/path1:/path2:/path3';
-const store = new BtpServiceKeyStore(); // Uses AUTH_BROKER_PATH
+// Directory will be created automatically if it doesn't exist when saving files
+const sessionStore = new AbapSessionStore('/path/to/sessions');
+await sessionStore.saveSession('TRIAL', config); // Creates directory if needed
 ```
 
 ### Service Key Format
@@ -136,35 +129,38 @@ const store = new BtpServiceKeyStore(); // Uses AUTH_BROKER_PATH
 }
 ```
 
-### Abstract Classes
+## File Handlers
 
-For creating custom store implementations:
+Utility classes for working with files:
 
-- **`AbstractServiceKeyStore`** - Base class for service key stores
-  - Handles file I/O operations
-  - Subclasses implement format-specific parsing logic
-
-- **`AbstractJsonSessionStore`** - Base class for file-based session stores
-  - Handles `.env` file read/write operations
-  - Subclasses implement format-specific serialization
-
-- **`AbstractSafeSessionStore`** - Base class for in-memory session stores
-  - Provides secure, non-persistent storage
-  - Subclasses implement format-specific data structures
-
-## Utilities
-
-### Path Resolver
+### JsonFileHandler
 
 ```typescript
-import { resolveSearchPaths, findFileInPaths } from '@mcp-abap-adt/auth-stores';
+import { JsonFileHandler } from '@mcp-abap-adt/auth-stores';
 
-// Resolve search paths from constructor, env var, or cwd
-const paths = resolveSearchPaths(['/custom/path']);
+// Load JSON file
+const data = await JsonFileHandler.load('TRIAL.json', '/path/to/directory');
 
-// Find file in multiple search paths
-const filePath = findFileInPaths('TRIAL.json', paths);
+// Save JSON file (atomic write)
+await JsonFileHandler.save('/path/to/file.json', { key: 'value' });
 ```
+
+### EnvFileHandler
+
+```typescript
+import { EnvFileHandler } from '@mcp-abap-adt/auth-stores';
+
+// Load .env file
+const vars = await EnvFileHandler.load('TRIAL.env', '/path/to/directory');
+
+// Save .env file (atomic write, preserves existing variables)
+await EnvFileHandler.save('/path/to/file.env', {
+  KEY1: 'value1',
+  KEY2: 'value2'
+}, true); // preserveExisting = true
+```
+
+## Utilities
 
 ### Constants
 
@@ -184,20 +180,61 @@ import {
 ```typescript
 import { loadServiceKey, loadXSUAAServiceKey } from '@mcp-abap-adt/auth-stores';
 
-// Load ABAP service key
-const abapKey = await loadServiceKey('TRIAL', ['/path/to/keys']);
+// Load ABAP service key (auto-detects format)
+const abapKey = await loadServiceKey('TRIAL', '/path/to/service-keys');
 
 // Load XSUAA service key
-const xsuaaKey = await loadXSUAAServiceKey('mcp', ['/path/to/keys']);
+const xsuaaKey = await loadXSUAAServiceKey('mcp', '/path/to/service-keys');
 ```
 
 ## Testing
 
-Tests use Jest and include unit tests with mocked file system operations.
+The package includes both unit tests (with mocked file system) and integration tests (with real files).
+
+### Unit Tests
+
+Unit tests use Jest with mocked file system operations:
 
 ```bash
 npm test
 ```
+
+### Integration Tests
+
+Integration tests work with real files from `tests/test-config.yaml`:
+
+1. Copy `tests/test-config.yaml.template` to `tests/test-config.yaml`
+2. Fill in real paths and destinations
+3. Run tests - integration tests will use real files if configured
+
+```yaml
+auth_broker:
+  paths:
+    service_keys_dir: ~/.config/mcp-abap-adt/service-keys/
+    sessions_dir: ~/.config/mcp-abap-adt/sessions/
+  abap:
+    destination: "TRIAL"
+  xsuaa:
+    btp_destination: "mcp"
+    mcp_url: "https://..."
+```
+
+Integration tests will skip if `test-config.yaml` is not configured or contains placeholder values.
+
+## Architecture
+
+### File Operations
+
+- **Service Key Stores** use `JsonFileHandler` to read JSON files
+- **Session Stores** use `EnvFileHandler` to read/write `.env` files
+- All file writes are atomic (write to temp file, then rename)
+
+### Store Implementation
+
+- All stores implement `IServiceKeyStore` or `ISessionStore` interfaces from `@mcp-abap-adt/auth-broker`
+- Stores accept a single directory path in constructor
+- File-based stores automatically create directories when saving
+- In-memory stores (`Safe*SessionStore`) don't persist data to disk
 
 ## Dependencies
 

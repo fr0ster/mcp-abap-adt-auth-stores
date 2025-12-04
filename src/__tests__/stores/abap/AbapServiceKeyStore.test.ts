@@ -1,5 +1,5 @@
 /**
- * Tests for AbapServiceKeyStore
+ * Unit tests for AbapServiceKeyStore (with mocks)
  */
 
 import { AbapServiceKeyStore } from '../../../stores/abap/AbapServiceKeyStore';
@@ -13,27 +13,20 @@ jest.mock('fs', () => ({
   readFileSync: jest.fn(),
 }));
 
-// Mock pathResolver
-jest.mock('../../../utils/pathResolver', () => ({
-  findFileInPaths: jest.fn(),
-  resolveSearchPaths: jest.fn(() => ['/test']),
-}));
-
 describe('AbapServiceKeyStore', () => {
   let store: AbapServiceKeyStore;
   const mockFs = fs as jest.Mocked<typeof fs>;
-  const mockPathResolver = require('../../../utils/pathResolver');
+  const testDir = '/test';
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockPathResolver.resolveSearchPaths.mockReturnValue(['/test']);
-    store = new AbapServiceKeyStore();
+    store = new AbapServiceKeyStore(testDir);
   });
 
   describe('getServiceKey', () => {
     it('should load and parse valid ABAP service key', async () => {
       const destination = 'TRIAL';
-      const filePath = `/test/${destination}.json`;
+      const filePath = path.join(testDir, `${destination}.json`);
       const serviceKey = {
         uaa: {
           url: 'https://test.authentication.sap.hana.ondemand.com',
@@ -46,7 +39,6 @@ describe('AbapServiceKeyStore', () => {
         },
       };
 
-      mockPathResolver.findFileInPaths.mockReturnValue(filePath);
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(serviceKey));
 
@@ -58,27 +50,25 @@ describe('AbapServiceKeyStore', () => {
       expect(result?.uaaClientSecret).toBe(serviceKey.uaa.clientsecret);
       expect(result?.serviceUrl).toBe(serviceKey.abap.url);
       expect(result?.sapClient).toBe(serviceKey.abap.client);
-      expect(mockPathResolver.findFileInPaths).toHaveBeenCalledWith(
-        `${destination}.json`,
-        expect.any(Array)
-      );
+      expect(mockFs.existsSync).toHaveBeenCalledWith(filePath);
       expect(mockFs.readFileSync).toHaveBeenCalledWith(filePath, 'utf8');
     });
 
     it('should return null if file not found', async () => {
       const destination = 'TRIAL';
+      const filePath = path.join(testDir, `${destination}.json`);
 
-      mockPathResolver.findFileInPaths.mockReturnValue(null);
+      mockFs.existsSync.mockReturnValue(false);
 
       const result = await store.getServiceKey(destination);
       expect(result).toBeNull();
+      expect(mockFs.existsSync).toHaveBeenCalledWith(filePath);
     });
 
     it('should throw error if file content is invalid JSON', async () => {
       const destination = 'TRIAL';
-      const filePath = `/test/${destination}.json`;
+      const filePath = path.join(testDir, `${destination}.json`);
 
-      mockPathResolver.findFileInPaths.mockReturnValue(filePath);
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue('invalid json');
 
@@ -87,14 +77,13 @@ describe('AbapServiceKeyStore', () => {
 
     it('should throw error if service key format is invalid', async () => {
       const destination = 'TRIAL';
-      const filePath = `/test/${destination}.json`;
+      const filePath = path.join(testDir, `${destination}.json`);
       const invalidKey = {
         abap: {
           url: 'https://test.abap.sap.hana.ondemand.com',
         },
       };
 
-      mockPathResolver.findFileInPaths.mockReturnValue(filePath);
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(invalidKey));
 
@@ -105,7 +94,7 @@ describe('AbapServiceKeyStore', () => {
   describe('getAuthorizationConfig', () => {
     it('should return authorization config from valid ABAP service key', async () => {
       const destination = 'TRIAL';
-      const filePath = `/test/${destination}.json`;
+      const filePath = path.join(testDir, `${destination}.json`);
       const serviceKey = {
         uaa: {
           url: 'https://test.authentication.sap.hana.ondemand.com',
@@ -114,7 +103,6 @@ describe('AbapServiceKeyStore', () => {
         },
       };
 
-      mockPathResolver.findFileInPaths.mockReturnValue(filePath);
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(serviceKey));
 
@@ -128,18 +116,20 @@ describe('AbapServiceKeyStore', () => {
 
     it('should return null if file not found', async () => {
       const destination = 'TRIAL';
+      const filePath = path.join(testDir, `${destination}.json`);
 
-      mockPathResolver.findFileInPaths.mockReturnValue(null);
+      mockFs.existsSync.mockReturnValue(false);
 
       const result = await store.getAuthorizationConfig(destination);
       expect(result).toBeNull();
+      expect(mockFs.existsSync).toHaveBeenCalledWith(filePath);
     });
   });
 
   describe('getConnectionConfig', () => {
     it('should return connection config from valid ABAP service key', async () => {
       const destination = 'TRIAL';
-      const filePath = `/test/${destination}.json`;
+      const filePath = path.join(testDir, `${destination}.json`);
       const serviceKey = {
         uaa: {
           url: 'https://test.authentication.sap.hana.ondemand.com',
@@ -153,7 +143,6 @@ describe('AbapServiceKeyStore', () => {
         },
       };
 
-      mockPathResolver.findFileInPaths.mockReturnValue(filePath);
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(serviceKey));
 
@@ -167,12 +156,13 @@ describe('AbapServiceKeyStore', () => {
 
     it('should return null if file not found', async () => {
       const destination = 'TRIAL';
+      const filePath = path.join(testDir, `${destination}.json`);
 
-      mockPathResolver.findFileInPaths.mockReturnValue(null);
+      mockFs.existsSync.mockReturnValue(false);
 
       const result = await store.getConnectionConfig(destination);
       expect(result).toBeNull();
+      expect(mockFs.existsSync).toHaveBeenCalledWith(filePath);
     });
   });
 });
-

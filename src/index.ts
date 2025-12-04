@@ -20,13 +20,10 @@ export { XsuaaSessionStore } from './stores/xsuaa/XsuaaSessionStore';
 export { SafeXsuaaSessionStore } from './stores/xsuaa/SafeXsuaaSessionStore';
 export { XsuaaServiceKeyStore } from './stores/xsuaa/XsuaaServiceKeyStore';
 
-// Abstract classes (for extending)
-export { AbstractServiceKeyStore } from './stores/abstract/AbstractServiceKeyStore';
-export { AbstractJsonSessionStore } from './stores/abstract/AbstractJsonSessionStore';
-export { AbstractSafeSessionStore } from './stores/abstract/AbstractSafeSessionStore';
-
 // Utils
 export { resolveSearchPaths, findFileInPaths } from './utils/pathResolver';
+export { JsonFileHandler } from './utils/JsonFileHandler';
+export { EnvFileHandler } from './utils/EnvFileHandler';
 export { 
   ABAP_AUTHORIZATION_VARS, 
   ABAP_CONNECTION_VARS,

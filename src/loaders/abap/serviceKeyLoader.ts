@@ -7,7 +7,7 @@
  */
 
 import * as fs from 'fs';
-import { findFileInPaths } from '../../utils/pathResolver';
+import * as path from 'path';
 import { AbapServiceKeyParser } from '../../parsers/abap/AbapServiceKeyParser';
 import { XsuaaServiceKeyParser } from '../../parsers/xsuaa/XsuaaServiceKeyParser';
 
@@ -15,14 +15,14 @@ import { XsuaaServiceKeyParser } from '../../parsers/xsuaa/XsuaaServiceKeyParser
  * Load service key from {destination}.json file
  * Automatically detects format and uses appropriate parser
  * @param destination Destination name
- * @param searchPaths Array of paths to search for the file
+ * @param directory Directory where the service key file is located
  * @returns Service key object or null if file not found
  */
-export async function loadServiceKey(destination: string, searchPaths: string[]): Promise<unknown | null> {
+export async function loadServiceKey(destination: string, directory: string): Promise<unknown | null> {
   const fileName = `${destination}.json`;
-  const serviceKeyPath = findFileInPaths(fileName, searchPaths);
+  const serviceKeyPath = path.join(directory, fileName);
 
-  if (!serviceKeyPath) {
+  if (!fs.existsSync(serviceKeyPath)) {
     return null;
   }
 

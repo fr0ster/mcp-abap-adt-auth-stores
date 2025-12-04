@@ -3,8 +3,8 @@
  */
 
 import * as fs from 'fs';
+import * as path from 'path';
 import * as dotenv from 'dotenv';
-import { findFileInPaths } from '../../utils/pathResolver';
 import { ABAP_AUTHORIZATION_VARS, ABAP_CONNECTION_VARS } from '../../utils/constants';
 
 // Internal type for ABAP environment configuration
@@ -22,14 +22,14 @@ interface EnvConfig {
 /**
  * Load environment configuration from {destination}.env file
  * @param destination Destination name
- * @param searchPaths Array of paths to search for the file
+ * @param directory Directory where the file is located
  * @returns EnvConfig object or null if file not found
  */
-export async function loadEnvFile(destination: string, searchPaths: string[]): Promise<EnvConfig | null> {
+export async function loadEnvFile(destination: string, directory: string): Promise<EnvConfig | null> {
   const fileName = `${destination}.env`;
-  const envFilePath = findFileInPaths(fileName, searchPaths);
+  const envFilePath = path.join(directory, fileName);
 
-  if (!envFilePath) {
+  if (!fs.existsSync(envFilePath)) {
     return null;
   }
 

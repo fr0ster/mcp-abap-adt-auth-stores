@@ -3,12 +3,9 @@
  * 
  * Stores XSUAA configuration in memory only.
  * Does not persist to disk - suitable for secure environments.
- * 
- * This is an alias for SafeBtpSessionStore for backward compatibility.
  */
 
-import type { IConnectionConfig, ISessionStore, IAuthorizationConfig } from '@mcp-abap-adt/auth-broker';
-import { AbstractSafeSessionStore } from '../abstract/AbstractSafeSessionStore';
+import type { IConnectionConfig, ISessionStore, IAuthorizationConfig, IConfig } from '@mcp-abap-adt/auth-broker';
 
 // Internal type for XSUAA session storage (same as base BTP, without sapUrl)
 interface XsuaaSessionData {
@@ -26,8 +23,14 @@ interface XsuaaSessionData {
  * Stores session data in memory only (no file I/O).
  * Suitable for secure environments where tokens should not be persisted to disk.
  */
-export class SafeXsuaaSessionStore extends AbstractSafeSessionStore implements ISessionStore {
-  protected validateSessionConfig(config: unknown): void {
+export class SafeXsuaaSessionStore implements ISessionStore {
+  private sessions: Map<string, XsuaaSessionData> = new Map();
+
+  private loadRawSession(destination: string): XsuaaSessionData | null {
+    return this.sessions.get(destination) || null;
+  }
+
+  private validateSessionConfig(config: IConfig): void {
     if (!config || typeof config !== 'object') {
       throw new Error('SafeXsuaaSessionStore can only store XSUAA sessions');
     }
@@ -49,9 +52,9 @@ export class SafeXsuaaSessionStore extends AbstractSafeSessionStore implements I
     }
   }
 
-  protected convertToInternalFormat(config: unknown): unknown {
+  private convertToInternalFormat(config: IConfig): XsuaaSessionData {
     if (!config || typeof config !== 'object') {
-      return config;
+      throw new Error('Invalid config');
     }
     const obj = config as Record<string, unknown>;
     // Convert IConfig format (serviceUrl, authorizationToken) to internal format (mcpUrl, jwtToken)
@@ -66,12 +69,36 @@ export class SafeXsuaaSessionStore extends AbstractSafeSessionStore implements I
     return internal;
   }
 
-  protected isValidSessionConfig(config: unknown): config is XsuaaSessionData {
+  private isValidSessionConfig(config: unknown): config is XsuaaSessionData {
     if (!config || typeof config !== 'object') return false;
     const obj = config as Record<string, unknown>;
     // Accept both IConfig format (authorizationToken) and internal format (jwtToken)
     // Reject ABAP (sapUrl) and BTP with abapUrl
     return (('authorizationToken' in obj || 'jwtToken' in obj) && !('sapUrl' in obj) && !('abapUrl' in obj));
+  }
+
+  async loadSession(destination: string): Promise<IConfig | null> {
+    const authConfig = await this.getAuthorizationConfig(destination);
+    const connConfig = await this.getConnectionConfig(destination);
+    
+    if (!authConfig && !connConfig) {
+      return null;
+    }
+    
+    return {
+      ...(authConfig || {}),
+      ...(connConfig || {}),
+    };
+  }
+
+  async saveSession(destination: string, config: IConfig): Promise<void> {
+    this.validateSessionConfig(config);
+    const internalConfig = this.convertToInternalFormat(config);
+    this.sessions.set(destination, internalConfig);
+  }
+
+  async deleteSession(destination: string): Promise<void> {
+    this.sessions.delete(destination);
   }
 
   async getConnectionConfig(destination: string): Promise<IConnectionConfig | null> {
@@ -137,4 +164,3 @@ export class SafeXsuaaSessionStore extends AbstractSafeSessionStore implements I
     await this.saveSession(destination, updated);
   }
 }
-

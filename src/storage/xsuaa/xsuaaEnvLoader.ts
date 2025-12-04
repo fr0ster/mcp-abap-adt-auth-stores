@@ -3,8 +3,8 @@
  */
 
 import * as fs from 'fs';
+import * as path from 'path';
 import * as dotenv from 'dotenv';
-import { findFileInPaths } from '../../utils/pathResolver';
 import { XSUAA_AUTHORIZATION_VARS, XSUAA_CONNECTION_VARS } from '../../utils/constants';
 
 // Internal type for XSUAA session storage
@@ -21,14 +21,14 @@ interface XsuaaSessionConfig {
  * Load XSUAA environment configuration from {destination}.env file
  * Reads XSUAA_* variables instead of SAP_* variables
  * @param destination Destination name
- * @param searchPaths Array of paths to search for the file
+ * @param directory Directory where the file is located
  * @returns XsuaaSessionConfig object or null if file not found
  */
-export async function loadXsuaaEnvFile(destination: string, searchPaths: string[]): Promise<XsuaaSessionConfig | null> {
+export async function loadXsuaaEnvFile(destination: string, directory: string): Promise<XsuaaSessionConfig | null> {
   const fileName = `${destination}.env`;
-  const envFilePath = findFileInPaths(fileName, searchPaths);
+  const envFilePath = path.join(directory, fileName);
 
-  if (!envFilePath) {
+  if (!fs.existsSync(envFilePath)) {
     return null;
   }
 

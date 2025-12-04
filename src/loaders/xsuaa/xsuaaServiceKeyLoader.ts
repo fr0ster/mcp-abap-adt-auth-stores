@@ -10,22 +10,22 @@
  * }
  */
 
-import { findFileInPaths } from '../../utils/pathResolver';
-import { XsuaaServiceKeyParser } from '../../parsers/xsuaa/XsuaaServiceKeyParser';
 import * as fs from 'fs';
+import * as path from 'path';
+import { XsuaaServiceKeyParser } from '../../parsers/xsuaa/XsuaaServiceKeyParser';
 
 /**
  * Load XSUAA service key from {destination}.json file
  * Normalizes direct XSUAA format to standard ServiceKey format
  * @param destination Destination name
- * @param searchPaths Array of paths to search for the file
+ * @param directory Directory where the service key file is located
  * @returns Service key object or null if file not found
  */
-export async function loadXSUAAServiceKey(destination: string, searchPaths: string[]): Promise<unknown | null> {
+export async function loadXSUAAServiceKey(destination: string, directory: string): Promise<unknown | null> {
   const fileName = `${destination}.json`;
-  const serviceKeyPath = findFileInPaths(fileName, searchPaths);
+  const serviceKeyPath = path.join(directory, fileName);
 
-  if (!serviceKeyPath) {
+  if (!fs.existsSync(serviceKeyPath)) {
     return null;
   }
 

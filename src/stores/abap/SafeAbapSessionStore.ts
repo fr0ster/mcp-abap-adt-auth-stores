@@ -3,11 +3,9 @@
  * 
  * Stores full ABAP configuration (with sapUrl) in memory only.
  * Does not persist to disk - suitable for secure environments.
- * This extends base BTP store by adding sapUrl requirement.
  */
 
-import type { ISessionStore, IConnectionConfig, IAuthorizationConfig } from '@mcp-abap-adt/auth-broker';
-import { AbstractSafeSessionStore } from '../abstract/AbstractSafeSessionStore';
+import type { ISessionStore, IConnectionConfig, IAuthorizationConfig, IConfig } from '@mcp-abap-adt/auth-broker';
 
 // Internal type for ABAP session storage (extends base BTP with sapUrl)
 interface AbapSessionData {
@@ -22,13 +20,19 @@ interface AbapSessionData {
 }
 
 /**
- * Safe ABAP Session store implementation (extends base BTP with sapUrl)
+ * Safe ABAP Session store implementation
  * 
  * Stores session data in memory only (no file I/O).
  * Suitable for secure environments where tokens should not be persisted to disk.
  */
-export class SafeAbapSessionStore extends AbstractSafeSessionStore implements ISessionStore {
-  protected validateSessionConfig(config: unknown): void {
+export class SafeAbapSessionStore implements ISessionStore {
+  private sessions: Map<string, AbapSessionData> = new Map();
+
+  private loadRawSession(destination: string): AbapSessionData | null {
+    return this.sessions.get(destination) || null;
+  }
+
+  private validateSessionConfig(config: IConfig): void {
     if (!config || typeof config !== 'object') {
       throw new Error('SafeAbapSessionStore can only store ABAP sessions (with sapUrl)');
     }
@@ -43,9 +47,9 @@ export class SafeAbapSessionStore extends AbstractSafeSessionStore implements IS
     }
   }
 
-  protected convertToInternalFormat(config: unknown): unknown {
+  private convertToInternalFormat(config: IConfig): AbapSessionData {
     if (!config || typeof config !== 'object') {
-      return config;
+      throw new Error('Invalid config');
     }
     const obj = config as Record<string, unknown>;
     // Convert IConfig format (serviceUrl, authorizationToken) to internal format (sapUrl, jwtToken)
@@ -62,11 +66,35 @@ export class SafeAbapSessionStore extends AbstractSafeSessionStore implements IS
     return internal;
   }
 
-  protected isValidSessionConfig(config: unknown): config is AbapSessionData {
+  private isValidSessionConfig(config: unknown): config is AbapSessionData {
     if (!config || typeof config !== 'object') return false;
     const obj = config as Record<string, unknown>;
     // Accept both IConfig format (serviceUrl, authorizationToken) and internal format (sapUrl, jwtToken)
     return (('serviceUrl' in obj || 'sapUrl' in obj) && ('authorizationToken' in obj || 'jwtToken' in obj));
+  }
+
+  async loadSession(destination: string): Promise<IConfig | null> {
+    const authConfig = await this.getAuthorizationConfig(destination);
+    const connConfig = await this.getConnectionConfig(destination);
+    
+    if (!authConfig && !connConfig) {
+      return null;
+    }
+    
+    return {
+      ...(authConfig || {}),
+      ...(connConfig || {}),
+    };
+  }
+
+  async saveSession(destination: string, config: IConfig): Promise<void> {
+    this.validateSessionConfig(config);
+    const internalConfig = this.convertToInternalFormat(config);
+    this.sessions.set(destination, internalConfig);
+  }
+
+  async deleteSession(destination: string): Promise<void> {
+    this.sessions.delete(destination);
   }
 
   async getConnectionConfig(destination: string): Promise<IConnectionConfig | null> {
@@ -136,4 +164,3 @@ export class SafeAbapSessionStore extends AbstractSafeSessionStore implements IS
     await this.saveSession(destination, updated);
   }
 }
-

@@ -1,9 +1,10 @@
 /**
- * Tests for BtpServiceKeyStore
+ * Unit tests for BtpServiceKeyStore (with mocks)
  */
 
 import { BtpServiceKeyStore } from '../../../stores/btp/BtpServiceKeyStore';
 import * as fs from 'fs';
+import * as path from 'path';
 import { jest } from '@jest/globals';
 
 // Mock fs module
@@ -12,27 +13,20 @@ jest.mock('fs', () => ({
   readFileSync: jest.fn(),
 }));
 
-// Mock pathResolver
-jest.mock('../../../utils/pathResolver', () => ({
-  findFileInPaths: jest.fn(),
-  resolveSearchPaths: jest.fn(() => ['/test']),
-}));
-
 describe('BtpServiceKeyStore', () => {
   let store: BtpServiceKeyStore;
   const mockFs = fs as jest.Mocked<typeof fs>;
-  const mockPathResolver = require('../../../utils/pathResolver');
+  const testDir = '/test';
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockPathResolver.resolveSearchPaths.mockReturnValue(['/test']);
-    store = new BtpServiceKeyStore();
+    store = new BtpServiceKeyStore(testDir);
   });
 
   describe('getServiceKey', () => {
     it('should load and parse valid XSUAA service key', async () => {
       const destination = 'mcp';
-      const filePath = `/test/${destination}.json`;
+      const filePath = path.join(testDir, `${destination}.json`);
       const serviceKey = {
         url: 'https://test.authentication.sap.hana.ondemand.com',
         clientid: 'test-client',
@@ -40,7 +34,6 @@ describe('BtpServiceKeyStore', () => {
         tenantmode: 'shared',
       };
 
-      mockPathResolver.findFileInPaths.mockReturnValue(filePath);
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(serviceKey));
 
@@ -50,32 +43,30 @@ describe('BtpServiceKeyStore', () => {
       expect(result?.uaaUrl).toBe(serviceKey.url);
       expect(result?.uaaClientId).toBe(serviceKey.clientid);
       expect(result?.uaaClientSecret).toBe(serviceKey.clientsecret);
-      expect(mockPathResolver.findFileInPaths).toHaveBeenCalledWith(
-        `${destination}.json`,
-        expect.any(Array)
-      );
+      expect(mockFs.existsSync).toHaveBeenCalledWith(filePath);
       expect(mockFs.readFileSync).toHaveBeenCalledWith(filePath, 'utf8');
     });
 
     it('should return null if file not found', async () => {
       const destination = 'mcp';
+      const filePath = path.join(testDir, `${destination}.json`);
 
-      mockPathResolver.findFileInPaths.mockReturnValue(null);
+      mockFs.existsSync.mockReturnValue(false);
 
       const result = await store.getServiceKey(destination);
       expect(result).toBeNull();
+      expect(mockFs.existsSync).toHaveBeenCalledWith(filePath);
     });
 
     it('should throw error if service key format is invalid', async () => {
       const destination = 'mcp';
-      const filePath = `/test/${destination}.json`;
+      const filePath = path.join(testDir, `${destination}.json`);
       const invalidKey = {
         uaa: {
           url: 'https://test.authentication.sap.hana.ondemand.com',
         },
       };
 
-      mockPathResolver.findFileInPaths.mockReturnValue(filePath);
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(invalidKey));
 
@@ -83,4 +74,3 @@ describe('BtpServiceKeyStore', () => {
     });
   });
 });
-

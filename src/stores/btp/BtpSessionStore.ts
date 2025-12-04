@@ -7,10 +7,9 @@
 
 import type { IAuthorizationConfig, IConnectionConfig, ISessionStore } from '@mcp-abap-adt/auth-broker';
 import type { IConfig } from '@mcp-abap-adt/auth-broker';
-import { AbstractJsonSessionStore } from '../abstract/AbstractJsonSessionStore';
-import { findFileInPaths } from '../../utils/pathResolver';
 import { loadXsuaaEnvFile } from '../../storage/xsuaa/xsuaaEnvLoader';
 import { saveXsuaaTokenToEnv } from '../../storage/xsuaa/xsuaaTokenStorage';
+import * as fs from 'fs';
 import * as path from 'path';
 
 // Internal type for base BTP session storage (without sapUrl)
@@ -32,14 +31,15 @@ interface BtpBaseSessionData {
  * 2. AUTH_BROKER_PATH environment variable
  * 3. Current working directory (lowest)
  */
-export class BtpSessionStore extends AbstractJsonSessionStore implements ISessionStore {
+export class BtpSessionStore implements ISessionStore {
+  protected directory: string;
+
   /**
-   * Get file name for destination
-   * @param destination Destination name
-   * @returns File name (e.g., "mcp.env")
+   * Create a new BtpSessionStore instance
+   * @param directory Directory where session .env files are located
    */
-  protected getFileName(destination: string): string {
-    return `${destination}.env`;
+  constructor(directory: string) {
+    this.directory = directory;
   }
 
   /**
@@ -47,13 +47,13 @@ export class BtpSessionStore extends AbstractJsonSessionStore implements ISessio
    * @param filePath Path to session file
    * @returns Parsed BtpBaseSessionData or null if invalid
    */
-  protected async loadFromFile(filePath: string): Promise<unknown | null> {
+  private async loadFromFile(filePath: string): Promise<unknown | null> {
     // Extract destination from file path
     const fileName = path.basename(filePath);
     const destination = fileName.replace(/\.env$/, '');
     
     // Load from .env file using XSUAA env loader (reads XSUAA_* variables)
-    const xsuaaConfig = await loadXsuaaEnvFile(destination, this.searchPaths);
+    const xsuaaConfig = await loadXsuaaEnvFile(destination, this.directory);
     if (!xsuaaConfig) {
       return null;
     }
@@ -62,11 +62,29 @@ export class BtpSessionStore extends AbstractJsonSessionStore implements ISessio
   }
 
   /**
-   * Save session to file
-   * @param filePath Path to session file
-   * @param config Session configuration to save
+   * Convert IConfig to internal format for ENV file storage
+   * @param config IConfig to convert
+   * @returns Internal format (BtpBaseSessionData)
    */
-  protected async saveToFile(filePath: string, config: unknown): Promise<void> {
+  private convertToInternalFormat(config: IConfig): Record<string, unknown> {
+    const obj = config as Record<string, unknown>;
+    // Convert IConfig format (serviceUrl, authorizationToken) to internal format (mcpUrl, jwtToken)
+    return {
+      jwtToken: (obj.authorizationToken || obj.jwtToken) as string,
+      mcpUrl: (obj.serviceUrl || obj.mcpUrl) as string | undefined,
+      refreshToken: obj.refreshToken as string | undefined,
+      uaaUrl: obj.uaaUrl as string | undefined,
+      uaaClientId: obj.uaaClientId as string | undefined,
+      uaaClientSecret: obj.uaaClientSecret as string | undefined,
+    };
+  }
+
+  /**
+   * Save session to ENV file
+   * @param filePath Path to session file
+   * @param config Internal format (BtpBaseSessionData) for ENV file
+   */
+  private async saveToFile(filePath: string, config: Record<string, unknown>): Promise<void> {
     // Type guard - ensure it's base BTP config (no sapUrl, no abapUrl)
     if (!config || typeof config !== 'object') {
       throw new Error('BtpSessionStore can only store base BTP sessions (without sapUrl)');
@@ -82,25 +100,51 @@ export class BtpSessionStore extends AbstractJsonSessionStore implements ISessio
       throw new Error('BtpSessionStore can only store base BTP sessions (without abapUrl)');
     }
     
-    // Ensure it has jwtToken (required)
-    if (!('jwtToken' in config)) {
-      throw new Error('BtpSessionStore can only store base BTP sessions');
-    }
-
     // Validate required fields
-    const btpConfig = config as { jwtToken?: string };
-    if (!btpConfig.jwtToken) {
+    if (!config.jwtToken) {
       throw new Error('Base BTP session config missing required field: jwtToken');
     }
-    // mcpUrl is optional - it's not part of authentication, only needed for making requests
 
     // Extract destination from file path
     const fileName = path.basename(filePath);
     const destination = fileName.replace(/\.env$/, '');
     const savePath = path.dirname(filePath);
 
-    // Save using XSUAA token storage (writes XSUAA_* variables)
-    await saveXsuaaTokenToEnv(destination, savePath, config as BtpBaseSessionData);
+    // Save using XSUAA token storage (writes XSUAA_* variables for base BTP)
+    const btpConfig = config as unknown as BtpBaseSessionData;
+    await saveXsuaaTokenToEnv(destination, savePath, btpConfig);
+  }
+
+  /**
+   * Save session configuration for destination
+   * @param destination Destination name (e.g., "TRIAL" or "mcp")
+   * @param config Session configuration to save
+   */
+  async saveSession(destination: string, config: IConfig): Promise<void> {
+    const fileName = `${destination}.env`;
+    const filePath = path.join(this.directory, fileName);
+
+    // Ensure directory exists
+    if (!fs.existsSync(this.directory)) {
+      fs.mkdirSync(this.directory, { recursive: true });
+    }
+
+    // Convert IConfig to internal format for ENV file
+    const internalConfig = this.convertToInternalFormat(config);
+    await this.saveToFile(filePath, internalConfig);
+  }
+
+  /**
+   * Delete session for destination
+   * @param destination Destination name (e.g., "TRIAL" or "mcp")
+   */
+  async deleteSession(destination: string): Promise<void> {
+    const fileName = `${destination}.env`;
+    const filePath = path.join(this.directory, fileName);
+
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
   }
 
   /**
@@ -129,8 +173,8 @@ export class BtpSessionStore extends AbstractJsonSessionStore implements ISessio
    * Used internally for getAuthorizationConfig, getConnectionConfig, setAuthorizationConfig and setConnectionConfig
    */
   private async loadRawSession(destination: string): Promise<BtpBaseSessionData | null> {
-    const fileName = this.getFileName(destination);
-    const sessionPath = findFileInPaths(fileName, this.searchPaths);
+    const fileName = `${destination}.env`;
+    const sessionPath = path.join(this.directory, fileName);
     
     if (!sessionPath) {
       return null;

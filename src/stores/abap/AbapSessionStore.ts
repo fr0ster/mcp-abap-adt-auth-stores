@@ -8,7 +8,10 @@
 
 import type { IAuthorizationConfig, IConnectionConfig, ISessionStore } from '@mcp-abap-adt/auth-broker';
 import type { IConfig } from '@mcp-abap-adt/auth-broker';
-import { AbstractJsonSessionStore } from '../abstract/AbstractJsonSessionStore';
+import { loadEnvFile } from '../../storage/abap/envLoader';
+import { saveTokenToEnv } from '../../storage/abap/tokenStorage';
+import * as fs from 'fs';
+import * as path from 'path';
 
 // Internal type for ABAP session storage (extends base BTP with sapUrl)
 interface AbapSessionData {
@@ -21,13 +24,9 @@ interface AbapSessionData {
   uaaClientSecret?: string;
   language?: string;
 }
-import { loadEnvFile } from '../../storage/abap/envLoader';
-import { saveTokenToEnv } from '../../storage/abap/tokenStorage';
-import { findFileInPaths } from '../../utils/pathResolver';
-import * as path from 'path';
 
 /**
- * ABAP Session store implementation (extends base BTP with sapUrl)
+ * ABAP Session store implementation
  * 
  * Searches for {destination}.env files in configured search paths.
  * Writes to first search path (highest priority).
@@ -36,34 +35,54 @@ import * as path from 'path';
  * 2. AUTH_BROKER_PATH environment variable
  * 3. Current working directory (lowest)
  */
-export class AbapSessionStore extends AbstractJsonSessionStore implements ISessionStore {
-  /**
-   * Get file name for destination
-   * @param destination Destination name
-   * @returns File name (e.g., "TRIAL.env")
-   */
-  protected getFileName(destination: string): string {
-    return `${destination}.env`;
-  }
+export class AbapSessionStore implements ISessionStore {
+  protected directory: string;
 
+  /**
+   * Create a new AbapSessionStore instance
+   * @param directory Directory where session .env files are located
+   */
+  constructor(directory: string) {
+    this.directory = directory;
+  }
   /**
    * Load session from file
    * @param filePath Path to session file
    * @returns Parsed EnvConfig or null if invalid
    */
-  protected async loadFromFile(filePath: string): Promise<unknown | null> {
+  private async loadFromFile(filePath: string): Promise<unknown | null> {
     // Extract destination from file path
     const fileName = path.basename(filePath);
     const destination = fileName.replace(/\.env$/, '');
-    return loadEnvFile(destination, this.searchPaths);
+    return loadEnvFile(destination, this.directory);
   }
 
   /**
-   * Save session to file
-   * @param filePath Path to session file
-   * @param config Session configuration to save
+   * Convert IConfig to internal format for ENV file storage
+   * @param config IConfig to convert
+   * @returns Internal format (AbapSessionData)
    */
-  protected async saveToFile(filePath: string, config: unknown): Promise<void> {
+  private convertToInternalFormat(config: IConfig): Record<string, unknown> {
+    const obj = config as Record<string, unknown>;
+    // Convert IConfig format (serviceUrl, authorizationToken) to internal format (sapUrl, jwtToken)
+    return {
+      sapUrl: (obj.serviceUrl || obj.sapUrl) as string,
+      jwtToken: (obj.authorizationToken || obj.jwtToken) as string,
+      refreshToken: obj.refreshToken as string | undefined,
+      uaaUrl: obj.uaaUrl as string | undefined,
+      uaaClientId: obj.uaaClientId as string | undefined,
+      uaaClientSecret: obj.uaaClientSecret as string | undefined,
+      sapClient: obj.sapClient as string | undefined,
+      language: obj.language as string | undefined,
+    };
+  }
+
+  /**
+   * Save session to ENV file
+   * @param filePath Path to session file
+   * @param config Internal format (AbapSessionData) for ENV file
+   */
+  private async saveToFile(filePath: string, config: Record<string, unknown>): Promise<void> {
     // Type guard - ensure it's EnvConfig (has sapUrl)
     if (!config || typeof config !== 'object' || !('sapUrl' in config)) {
       throw new Error('AbapSessionStore can only store ABAP sessions (with sapUrl)');
@@ -75,7 +94,7 @@ export class AbapSessionStore extends AbstractJsonSessionStore implements ISessi
     const savePath = path.dirname(filePath);
 
     // Convert to format expected by saveTokenToEnv
-    const abapConfig = config as AbapSessionData;
+    const abapConfig = config as unknown as AbapSessionData;
     await saveTokenToEnv(destination, savePath, {
       sapUrl: abapConfig.sapUrl,
       jwtToken: abapConfig.jwtToken,
@@ -86,6 +105,38 @@ export class AbapSessionStore extends AbstractJsonSessionStore implements ISessi
       sapClient: abapConfig.sapClient,
       language: abapConfig.language,
     });
+  }
+
+  /**
+   * Save session configuration for destination
+   * @param destination Destination name (e.g., "TRIAL" or "mcp")
+   * @param config Session configuration to save
+   */
+  async saveSession(destination: string, config: IConfig): Promise<void> {
+    const fileName = `${destination}.env`;
+    const filePath = path.join(this.directory, fileName);
+
+    // Ensure directory exists
+    if (!fs.existsSync(this.directory)) {
+      fs.mkdirSync(this.directory, { recursive: true });
+    }
+
+    // Convert IConfig to internal format for ENV file
+    const internalConfig = this.convertToInternalFormat(config);
+    await this.saveToFile(filePath, internalConfig);
+  }
+
+  /**
+   * Delete session for destination
+   * @param destination Destination name (e.g., "TRIAL" or "mcp")
+   */
+  async deleteSession(destination: string): Promise<void> {
+    const fileName = `${destination}.env`;
+    const filePath = path.join(this.directory, fileName);
+
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
   }
 
   /**
@@ -114,8 +165,8 @@ export class AbapSessionStore extends AbstractJsonSessionStore implements ISessi
    * Used internally for setAuthorizationConfig and setConnectionConfig
    */
   private async loadRawSession(destination: string): Promise<AbapSessionData | null> {
-    const fileName = this.getFileName(destination);
-    const sessionPath = findFileInPaths(fileName, this.searchPaths);
+    const fileName = `${destination}.env`;
+    const sessionPath = path.join(this.directory, fileName);
     
     if (!sessionPath) {
       return null;

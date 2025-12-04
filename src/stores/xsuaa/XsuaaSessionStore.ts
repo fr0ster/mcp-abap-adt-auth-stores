@@ -7,10 +7,9 @@
 
 import type { IAuthorizationConfig, IConnectionConfig, ISessionStore } from '@mcp-abap-adt/auth-broker';
 import type { IConfig } from '@mcp-abap-adt/auth-broker';
-import { AbstractJsonSessionStore } from '../abstract/AbstractJsonSessionStore';
-import { findFileInPaths } from '../../utils/pathResolver';
 import { loadXsuaaEnvFile } from '../../storage/xsuaa/xsuaaEnvLoader';
 import { saveXsuaaTokenToEnv } from '../../storage/xsuaa/xsuaaTokenStorage';
+import * as fs from 'fs';
 import * as path from 'path';
 
 // Internal type for XSUAA session storage (same as base BTP, without sapUrl)
@@ -32,7 +31,16 @@ interface XsuaaSessionData {
  * 2. AUTH_BROKER_PATH environment variable
  * 3. Current working directory (lowest)
  */
-export class XsuaaSessionStore extends AbstractJsonSessionStore implements ISessionStore {
+export class XsuaaSessionStore implements ISessionStore {
+  protected directory: string;
+
+  /**
+   * Create a new XsuaaSessionStore instance
+   * @param directory Directory where session .env files are located
+   */
+  constructor(directory: string) {
+    this.directory = directory;
+  }
   /**
    * Get file name for destination
    * @param destination Destination name
@@ -53,7 +61,7 @@ export class XsuaaSessionStore extends AbstractJsonSessionStore implements ISess
     const destination = fileName.replace(/\.env$/, '');
     
     // Load from .env file using XSUAA env loader (reads XSUAA_* variables)
-    const xsuaaConfig = await loadXsuaaEnvFile(destination, this.searchPaths);
+    const xsuaaConfig = await loadXsuaaEnvFile(destination, this.directory);
     if (!xsuaaConfig) {
       return null;
     }
@@ -62,46 +70,89 @@ export class XsuaaSessionStore extends AbstractJsonSessionStore implements ISess
   }
 
   /**
-   * Save session to file
-   * @param filePath Path to session file
-   * @param config Session configuration to save
+   * Convert IConfig to internal format for ENV file storage
+   * @param config IConfig to convert
+   * @returns Internal format (XsuaaSessionData)
    */
-  protected async saveToFile(filePath: string, config: unknown): Promise<void> {
+  protected convertToInternalFormat(config: IConfig): Record<string, unknown> {
+    const obj = config as Record<string, unknown>;
+    // Convert IConfig format (serviceUrl, authorizationToken) to internal format (mcpUrl, jwtToken)
+    return {
+      jwtToken: (obj.authorizationToken || obj.jwtToken) as string,
+      mcpUrl: (obj.serviceUrl || obj.mcpUrl) as string | undefined,
+      refreshToken: obj.refreshToken as string | undefined,
+      uaaUrl: obj.uaaUrl as string | undefined,
+      uaaClientId: obj.uaaClientId as string | undefined,
+      uaaClientSecret: obj.uaaClientSecret as string | undefined,
+    };
+  }
+
+  /**
+   * Save session to ENV file
+   * @param filePath Path to session file
+   * @param config Internal format (XsuaaSessionData) for ENV file
+   */
+  protected async saveToFile(filePath: string, config: Record<string, unknown>): Promise<void> {
     // Type guard - ensure it's XSUAA config (no sapUrl, no abapUrl)
     if (!config || typeof config !== 'object') {
-      throw new Error('XsuaaSessionStore can only store XsuaaSessionConfig');
+      throw new Error('XsuaaSessionStore can only store XSUAA sessions');
     }
     
     // Reject ABAP sessions (has sapUrl)
     if ('sapUrl' in config) {
-      throw new Error('XsuaaSessionStore can only store XsuaaSessionConfig');
+      throw new Error('XsuaaSessionStore can only store XSUAA sessions');
     }
     
     // Reject BTP sessions with abapUrl (that's for ABAP store)
     if ('abapUrl' in config) {
-      throw new Error('XsuaaSessionStore can only store XsuaaSessionConfig');
+      throw new Error('XsuaaSessionStore can only store XSUAA sessions');
     }
     
-    // Ensure it has jwtToken (required)
-    if (!('jwtToken' in config)) {
-      throw new Error('XsuaaSessionStore can only store XsuaaSessionConfig');
-    }
-
     // Validate required fields
-    const xsuaaConfig = config as { jwtToken?: string };
-    if (!xsuaaConfig.jwtToken) {
+    if (!config.jwtToken) {
       throw new Error('XSUAA session config missing required field: jwtToken');
     }
-    // mcpUrl is optional - it's not part of authentication, only needed for making requests
 
     // Extract destination from file path
     const fileName = path.basename(filePath);
     const destination = fileName.replace(/\.env$/, '');
     const savePath = path.dirname(filePath);
 
-    // Convert to XSUAA format and save
-    const xsuaaData = config as XsuaaSessionData;
+    // Save using XSUAA token storage
+    const xsuaaData = config as unknown as XsuaaSessionData;
     await saveXsuaaTokenToEnv(destination, savePath, xsuaaData);
+  }
+
+  /**
+   * Save session configuration for destination
+   * @param destination Destination name (e.g., "TRIAL" or "mcp")
+   * @param config Session configuration to save
+   */
+  async saveSession(destination: string, config: IConfig): Promise<void> {
+    const fileName = `${destination}.env`;
+    const filePath = path.join(this.directory, fileName);
+
+    // Ensure directory exists
+    if (!fs.existsSync(this.directory)) {
+      fs.mkdirSync(this.directory, { recursive: true });
+    }
+
+    // Convert IConfig to internal format for ENV file
+    const internalConfig = this.convertToInternalFormat(config);
+    await this.saveToFile(filePath, internalConfig);
+  }
+
+  /**
+   * Delete session for destination
+   * @param destination Destination name (e.g., "TRIAL" or "mcp")
+   */
+  async deleteSession(destination: string): Promise<void> {
+    const fileName = `${destination}.env`;
+    const filePath = path.join(this.directory, fileName);
+
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
   }
 
   /**
@@ -130,10 +181,10 @@ export class XsuaaSessionStore extends AbstractJsonSessionStore implements ISess
    * Used internally for getAuthorizationConfig, getConnectionConfig, setAuthorizationConfig and setConnectionConfig
    */
   private async loadRawSession(destination: string): Promise<XsuaaSessionData | null> {
-    const fileName = this.getFileName(destination);
-    const sessionPath = findFileInPaths(fileName, this.searchPaths);
+    const fileName = `${destination}.env`;
+    const sessionPath = path.join(this.directory, fileName);
     
-    if (!sessionPath) {
+    if (!fs.existsSync(sessionPath)) {
       return null;
     }
     
