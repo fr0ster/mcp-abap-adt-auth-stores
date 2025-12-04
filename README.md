@@ -18,6 +18,54 @@ This package implements the `IServiceKeyStore` and `ISessionStore` interfaces fr
 - **Session Stores**: Read/write session data from/to `.env` files or in-memory storage
 - **File Handlers**: Utility classes for working with JSON and ENV files
 
+## Responsibilities and Design Principles
+
+### Core Development Principle
+
+**Interface-Only Communication**: This package follows a fundamental development principle: **all interactions with external dependencies happen ONLY through interfaces**. The code knows **NOTHING beyond what is defined in the interfaces**.
+
+This means:
+- Does not know about concrete implementation classes from other packages
+- Does not know about internal data structures or methods not defined in interfaces
+- Does not make assumptions about implementation behavior beyond interface contracts
+- Does not access properties or methods not explicitly defined in interfaces
+
+This principle ensures:
+- **Loose coupling**: Stores are decoupled from concrete implementations in other packages
+- **Flexibility**: New implementations can be added without modifying stores
+- **Testability**: Easy to mock dependencies for testing
+- **Maintainability**: Changes to implementations don't affect stores
+
+### Package Responsibilities
+
+This package is responsible for:
+
+1. **Implementing storage interfaces**: Provides concrete implementations of `IServiceKeyStore` and `ISessionStore` interfaces defined in `@mcp-abap-adt/auth-broker`
+2. **File I/O operations**: Handles reading and writing service key JSON files and session `.env` files
+3. **Data format conversion**: Converts between interface types (`IConfig`, `IConnectionConfig`, `IAuthorizationConfig`) and internal storage formats
+4. **Platform-specific handling**: Provides different store implementations for ABAP, BTP, and XSUAA with their specific data formats
+
+#### What This Package Does
+
+- **Implements interfaces**: Provides concrete implementations of `IServiceKeyStore` and `ISessionStore`
+- **Handles file operations**: Reads/writes JSON and `.env` files using atomic operations
+- **Manages data formats**: Converts between interface types and internal storage formats (e.g., `AbapSessionData`, `BtpBaseSessionData`)
+- **Provides utilities**: File handlers (`JsonFileHandler`, `EnvFileHandler`) for safe file operations
+
+#### What This Package Does NOT Do
+
+- **Does NOT implement authentication logic**: Token acquisition and OAuth2 flows are handled by `@mcp-abap-adt/auth-providers`
+- **Does NOT orchestrate authentication**: Token lifecycle management is handled by `@mcp-abap-adt/auth-broker`
+- **Does NOT know about token validation**: Token validation logic is not part of this package
+- **Does NOT interact with external services**: All HTTP requests and OAuth flows are handled by other packages
+
+### External Dependencies
+
+This package interacts with external packages **ONLY through interfaces**:
+
+- **`@mcp-abap-adt/auth-broker`**: Uses interfaces (`IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `IAuthorizationConfig`) - does not know about `AuthBroker` implementation
+- **No direct dependencies on other packages**: All interactions happen through well-defined interfaces
+
 ## Store Types
 
 ### Service Key Stores
