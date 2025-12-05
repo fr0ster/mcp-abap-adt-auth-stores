@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.3] - 2024-12-04
+## [0.1.4] - 2025-12-05
+
+### Added
+- **npm Configuration**: Added `.npmrc` file with `prefer-online=true` to ensure packages are installed from npmjs.com registry instead of local file system dependencies
+
+## [0.1.3] - 2025-12-04
 
 ### Added
 - **Interfaces Package Integration**: Migrated to use `@mcp-abap-adt/interfaces` package for all interface definitions
@@ -20,7 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `IServiceKeyStore`, `ISessionStore`, `IAuthorizationConfig`, `IConnectionConfig`, `IConfig` now imported from shared package
   - Backward compatibility maintained - interfaces remain the same, only import source changed
 
-## [0.1.2] - 2024-12-04
+### Documentation
+- **Responsibilities and Design Principles**: Added comprehensive documentation section explaining package responsibilities and design principles
+
+## [0.1.2] - 2025-12-04
 
 ### Changed
 - **Architecture Refactoring** - Simplified store architecture
@@ -44,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `apiurl` is for API calls, but OAuth2 authorization requires base `url`
   - This fixes browser authentication for BTP/ABAP connections using XSUAA service keys
 
-## [0.1.1] - 2024-12-04
+## [0.1.1] - 2025-12-04
 
 ### Changed
 - **Architecture Refactoring** - Simplified store architecture
@@ -68,7 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `apiurl` is for API calls, but OAuth2 authorization requires base `url`
   - This fixes browser authentication for BTP/ABAP connections using XSUAA service keys
 
-## [0.1.0] - 2024-12-04
+## [0.1.0] - 2025-12-04
 
 ### Added
 - Initial release of unified stores package
