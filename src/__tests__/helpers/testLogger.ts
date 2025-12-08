@@ -19,7 +19,7 @@ function shouldLog(level: LogLevel): boolean {
 }
 
 export function createTestLogger(prefix: string = 'TEST'): ILogger {
-  // Check if logging is enabled - can be disabled with DEBUG_AUTH_STORES=false
+  // Check if logging is enabled - only if explicitly enabled via environment variables
   const isEnabled = (): boolean => {
     // Explicitly disabled
     if (process.env.DEBUG_AUTH_STORES === 'false') {
@@ -31,8 +31,8 @@ export function createTestLogger(prefix: string = 'TEST'): ILogger {
         process.env.DEBUG?.includes('auth-stores') === true) {
       return true;
     }
-    // Enable by default in test environment (unless explicitly disabled)
-    return process.env.NODE_ENV === 'test';
+    // Do not enable by default - require explicit enable
+    return false;
   };
 
   // Format message and meta into single line

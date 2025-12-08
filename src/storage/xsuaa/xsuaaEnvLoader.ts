@@ -46,9 +46,11 @@ export async function loadXsuaaEnvFile(destination: string, directory: string, l
     // Extract required fields (XSUAA_* variables)
     const jwtToken = parsed[XSUAA_CONNECTION_VARS.AUTHORIZATION_TOKEN];
 
-    log?.debug(`Extracted fields: hasJwtToken(${!!jwtToken})`);
+    log?.debug(`Extracted fields: hasJwtToken(${jwtToken !== undefined && jwtToken !== null})`);
 
-    if (!jwtToken) {
+    // Allow empty string for jwtToken (can be set later via setConnectionConfig)
+    // Only reject if jwtToken is undefined or null
+    if (jwtToken === undefined || jwtToken === null) {
       log?.warn(`XSUAA env file missing required field: jwtToken`);
       return null;
     }

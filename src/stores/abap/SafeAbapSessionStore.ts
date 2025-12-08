@@ -146,7 +146,8 @@ export class SafeAbapSessionStore implements ISessionStore {
         sapClient: config.sapClient,
         language: config.language,
       };
-      await this.saveSession(destination, newSession);
+      // Save directly to Map (internal format)
+      this.sessions.set(destination, newSession);
       this.log?.info(`Session created for ${destination}: serviceUrl(${config.serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars)`);
       return;
     }
@@ -158,7 +159,8 @@ export class SafeAbapSessionStore implements ISessionStore {
       sapClient: config.sapClient !== undefined ? config.sapClient : current.sapClient,
       language: config.language !== undefined ? config.language : current.language,
     };
-    await this.saveSession(destination, updated);
+    // Save directly to Map (internal format)
+    this.sessions.set(destination, updated);
   }
 
   async getAuthorizationConfig(destination: string): Promise<IAuthorizationConfig | null> {
@@ -202,7 +204,8 @@ export class SafeAbapSessionStore implements ISessionStore {
         uaaClientSecret: config.uaaClientSecret,
         refreshToken: config.refreshToken,
       };
-      await this.saveSession(destination, newSession);
+      // Save directly to Map (internal format)
+      this.sessions.set(destination, newSession);
       return;
     }
 
@@ -213,6 +216,7 @@ export class SafeAbapSessionStore implements ISessionStore {
       uaaClientSecret: config.uaaClientSecret,
       refreshToken: config.refreshToken || current.refreshToken,
     };
-    await this.saveSession(destination, updated);
+    // Save directly to Map (internal format)
+    this.sessions.set(destination, updated);
   }
 }

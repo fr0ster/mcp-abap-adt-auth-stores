@@ -145,7 +145,8 @@ export class SafeXsuaaSessionStore implements ISessionStore {
         mcpUrl: config.serviceUrl,
         jwtToken: config.authorizationToken || '',
       };
-      await this.saveSession(destination, newSession);
+      // Save directly to Map (internal format)
+      this.sessions.set(destination, newSession);
       this.log?.info(`Session created for ${destination}: mcpUrl(${config.serviceUrl ? config.serviceUrl.substring(0, 40) + '...' : 'none'}), token(${config.authorizationToken?.length || 0} chars)`);
       return;
     }
@@ -155,7 +156,8 @@ export class SafeXsuaaSessionStore implements ISessionStore {
       mcpUrl: config.serviceUrl !== undefined ? config.serviceUrl : current.mcpUrl,
       jwtToken: config.authorizationToken !== undefined ? config.authorizationToken : current.jwtToken,
     };
-    await this.saveSession(destination, updated);
+    // Save directly to Map (internal format)
+    this.sessions.set(destination, updated);
   }
 
   async getAuthorizationConfig(destination: string): Promise<IAuthorizationConfig | null> {
@@ -192,7 +194,8 @@ export class SafeXsuaaSessionStore implements ISessionStore {
         uaaClientSecret: config.uaaClientSecret,
         refreshToken: config.refreshToken,
       };
-      await this.saveSession(destination, newSession);
+      // Save directly to Map (internal format)
+      this.sessions.set(destination, newSession);
       return;
     }
 
@@ -203,6 +206,7 @@ export class SafeXsuaaSessionStore implements ISessionStore {
       uaaClientSecret: config.uaaClientSecret,
       refreshToken: config.refreshToken || current.refreshToken,
     };
-    await this.saveSession(destination, updated);
+    // Save directly to Map (internal format)
+    this.sessions.set(destination, updated);
   }
 }
