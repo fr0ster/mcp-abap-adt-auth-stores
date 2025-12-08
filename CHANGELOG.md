@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2025-12-07
+
+### Changed
+- **Dependency Updates**: Updated dependencies to latest versions
+  - `@mcp-abap-adt/interfaces`: `^0.1.0` → `^0.1.3` (includes new header constants and session ID header constants)
+
 ## [0.1.4] - 2025-12-05
 
 ### Added
