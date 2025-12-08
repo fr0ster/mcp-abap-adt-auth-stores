@@ -42,6 +42,12 @@ export class XsuaaSessionStore implements ISessionStore {
   constructor(directory: string, log?: ILogger) {
     this.directory = directory;
     this.log = log;
+    
+    // Ensure directory exists - create if it doesn't
+    if (!fs.existsSync(directory)) {
+      fs.mkdirSync(directory, { recursive: true });
+      this.log?.debug(`Created session directory: ${directory}`);
+    }
   }
   /**
    * Get file name for destination
@@ -111,7 +117,8 @@ export class XsuaaSessionStore implements ISessionStore {
     }
     
     // Validate required fields
-    if (!config.jwtToken) {
+    // Allow empty string for jwtToken (can be set later via setConnectionConfig)
+    if (config.jwtToken === undefined || config.jwtToken === null) {
       throw new Error('XSUAA session config missing required field: jwtToken');
     }
 
@@ -219,7 +226,8 @@ export class XsuaaSessionStore implements ISessionStore {
       return null;
     }
 
-    if (!sessionConfig.jwtToken) {
+    // Return null if jwtToken is undefined or null (but allow empty string)
+    if (sessionConfig.jwtToken === undefined || sessionConfig.jwtToken === null) {
       this.log?.warn(`Connection config for ${destination} missing required field: jwtToken`);
       return null;
     }
@@ -233,15 +241,26 @@ export class XsuaaSessionStore implements ISessionStore {
 
   async setConnectionConfig(destination: string, config: IConnectionConfig): Promise<void> {
     const current = await this.loadRawSession(destination);
+    
     if (!current) {
-      throw new Error(`No session found for destination "${destination}"`);
+      // Session doesn't exist - create new one
+      // For XSUAA, mcpUrl is optional
+      this.log?.debug(`Creating new session for ${destination} via setConnectionConfig: mcpUrl(${config.serviceUrl ? config.serviceUrl.substring(0, 40) + '...' : 'none'}), token(${config.authorizationToken?.length || 0} chars)`);
+      
+      const newSession: XsuaaSessionData = {
+        mcpUrl: config.serviceUrl,
+        jwtToken: config.authorizationToken || '',
+      };
+      await this.saveSession(destination, newSession);
+      this.log?.info(`Session created for ${destination}: mcpUrl(${config.serviceUrl ? config.serviceUrl.substring(0, 40) + '...' : 'none'}), token(${config.authorizationToken?.length || 0} chars)`);
+      return;
     }
 
     // Update connection fields
     const updated: XsuaaSessionData = {
       ...current,
       mcpUrl: config.serviceUrl !== undefined ? config.serviceUrl : current.mcpUrl,
-      jwtToken: config.authorizationToken,
+      jwtToken: config.authorizationToken !== undefined ? config.authorizationToken : current.jwtToken,
     };
     
     await this.saveSession(destination, updated);
@@ -270,8 +289,22 @@ export class XsuaaSessionStore implements ISessionStore {
 
   async setAuthorizationConfig(destination: string, config: IAuthorizationConfig): Promise<void> {
     const current = await this.loadRawSession(destination);
+    
     if (!current) {
-      throw new Error(`No session found for destination "${destination}"`);
+      // Session doesn't exist - create new one
+      // For XSUAA, mcpUrl is optional, so we can create session without it
+      this.log?.debug(`Creating new session for ${destination} via setAuthorizationConfig`);
+      
+      const newSession: XsuaaSessionData = {
+        mcpUrl: undefined, // Will be set when connection config is set
+        jwtToken: '', // Will be set when connection config is set
+        uaaUrl: config.uaaUrl,
+        uaaClientId: config.uaaClientId,
+        uaaClientSecret: config.uaaClientSecret,
+        refreshToken: config.refreshToken,
+      };
+      await this.saveSession(destination, newSession);
+      return;
     }
 
     // Update authorization fields

@@ -145,10 +145,11 @@ All stores accept a single directory path in the constructor:
 // Single directory path
 const store = new BtpServiceKeyStore('/path/to/service-keys');
 
-// Directory will be created automatically if it doesn't exist when saving files
-const sessionStore = new AbapSessionStore('/path/to/sessions');
-await sessionStore.saveSession('TRIAL', config); // Creates directory if needed
+// File-based session stores automatically create directory in constructor if it doesn't exist
+const sessionStore = new AbapSessionStore('/path/to/sessions'); // Directory created automatically
 ```
+
+**Note**: File-based session stores (`AbapSessionStore`, `BtpSessionStore`, `XsuaaSessionStore`) automatically create the directory in the constructor if it doesn't exist. Stores are ready to use immediately after construction.
 
 ### Service Key Format
 
@@ -355,12 +356,23 @@ Integration tests will skip if `test-config.yaml` is not configured or contains 
 
 - All stores implement `IServiceKeyStore` or `ISessionStore` interfaces from `@mcp-abap-adt/auth-broker`
 - Stores accept a single directory path in constructor
-- File-based stores automatically create directories when saving
+- File-based session stores automatically create directories in constructor if they don't exist
+- Session stores automatically create sessions when calling `setConnectionConfig` or `setAuthorizationConfig` (no need to call `saveSession` first)
 - In-memory stores (`Safe*SessionStore`) don't persist data to disk
+
+### Session Store Behavior
+
+Session stores are designed to work seamlessly with `AuthBroker`:
+
+- **Ready after construction**: File-based stores create directory automatically, stores are ready to use immediately
+- **Automatic session creation**: Calling `setConnectionConfig` or `setAuthorizationConfig` on an empty store creates a new session
+- **ABAP stores**: Require `serviceUrl` when creating new session via `setConnectionConfig` or `setAuthorizationConfig`
+- **BTP/XSUAA stores**: `mcpUrl` is optional - can create session with authorization config first, then add connection config
+- **Token updates**: `setConnectionConfig` updates token if provided, preserves existing token if not provided
 
 ## Dependencies
 
-- `@mcp-abap-adt/auth-broker` (^0.1.6) - Interface definitions
+- `@mcp-abap-adt/interfaces` (^0.1.3) - Interface definitions (`IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `IAuthorizationConfig`, `ILogger`)
 - `dotenv` - Environment variable parsing
 
 ## License

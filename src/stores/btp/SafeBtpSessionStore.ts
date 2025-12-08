@@ -56,7 +56,10 @@ export class SafeBtpSessionStore implements ISessionStore {
     }
     
     // Accept IConfig format (has authorizationToken) or internal format (has jwtToken)
-    if (!obj.authorizationToken && !obj.jwtToken) {
+    // Allow empty string for token (can be set later via setConnectionConfig)
+    const hasToken = (obj.authorizationToken !== undefined && obj.authorizationToken !== null) ||
+                     (obj.jwtToken !== undefined && obj.jwtToken !== null);
+    if (!hasToken) {
       throw new Error('Base BTP session config missing required field: authorizationToken or jwtToken');
     }
   }
@@ -78,13 +81,6 @@ export class SafeBtpSessionStore implements ISessionStore {
     return internal;
   }
 
-  private isValidSessionConfig(config: unknown): config is BtpBaseSessionData {
-    if (!config || typeof config !== 'object') return false;
-    const obj = config as Record<string, unknown>;
-    // Accept both IConfig format (authorizationToken) and internal format (jwtToken)
-    // Reject ABAP (sapUrl) and BTP with abapUrl
-    return (('authorizationToken' in obj || 'jwtToken' in obj) && !('sapUrl' in obj) && !('abapUrl' in obj));
-  }
 
   async loadSession(destination: string): Promise<IConfig | null> {
     this.log?.debug(`Loading session for destination: ${destination}`);
@@ -122,11 +118,12 @@ export class SafeBtpSessionStore implements ISessionStore {
 
   async getConnectionConfig(destination: string): Promise<IConnectionConfig | null> {
     const sessionConfig = this.loadRawSession(destination);
-    if (!this.isValidSessionConfig(sessionConfig)) {
+    if (!sessionConfig) {
       return null;
     }
 
-    if (!sessionConfig.jwtToken) {
+    // Return null if jwtToken is undefined or null (but allow empty string)
+    if (sessionConfig.jwtToken === undefined || sessionConfig.jwtToken === null) {
       return null;
     }
 
@@ -138,20 +135,32 @@ export class SafeBtpSessionStore implements ISessionStore {
 
   async setConnectionConfig(destination: string, config: IConnectionConfig): Promise<void> {
     const current = this.loadRawSession(destination);
-    if (!this.isValidSessionConfig(current)) {
-      throw new Error(`No base BTP session found for destination "${destination}"`);
+    
+    if (!current) {
+      // Session doesn't exist - create new one
+      // For BTP, mcpUrl is optional
+      this.log?.debug(`Creating new session for ${destination} via setConnectionConfig: mcpUrl(${config.serviceUrl ? config.serviceUrl.substring(0, 40) + '...' : 'none'}), token(${config.authorizationToken?.length || 0} chars)`);
+      
+      const newSession: BtpBaseSessionData = {
+        mcpUrl: config.serviceUrl,
+        jwtToken: config.authorizationToken || '',
+      };
+      await this.saveSession(destination, newSession);
+      this.log?.info(`Session created for ${destination}: mcpUrl(${config.serviceUrl ? config.serviceUrl.substring(0, 40) + '...' : 'none'}), token(${config.authorizationToken?.length || 0} chars)`);
+      return;
     }
+    
     const updated: BtpBaseSessionData = {
       ...current,
       mcpUrl: config.serviceUrl !== undefined ? config.serviceUrl : current.mcpUrl,
-      jwtToken: config.authorizationToken,
+      jwtToken: config.authorizationToken !== undefined ? config.authorizationToken : current.jwtToken,
     };
     await this.saveSession(destination, updated);
   }
 
   async getAuthorizationConfig(destination: string): Promise<IAuthorizationConfig | null> {
     const sessionConfig = this.loadRawSession(destination);
-    if (!this.isValidSessionConfig(sessionConfig)) {
+    if (!sessionConfig) {
       return null;
     }
 
@@ -169,8 +178,22 @@ export class SafeBtpSessionStore implements ISessionStore {
 
   async setAuthorizationConfig(destination: string, config: IAuthorizationConfig): Promise<void> {
     const current = this.loadRawSession(destination);
-    if (!this.isValidSessionConfig(current)) {
-      throw new Error(`No base BTP session found for destination "${destination}"`);
+    
+    if (!current) {
+      // Session doesn't exist - create new one
+      // For BTP, mcpUrl is optional, so we can create session without it
+      this.log?.debug(`Creating new session for ${destination} via setAuthorizationConfig`);
+      
+      const newSession: BtpBaseSessionData = {
+        mcpUrl: undefined, // Will be set when connection config is set
+        jwtToken: '', // Will be set when connection config is set
+        uaaUrl: config.uaaUrl,
+        uaaClientId: config.uaaClientId,
+        uaaClientSecret: config.uaaClientSecret,
+        refreshToken: config.refreshToken,
+      };
+      await this.saveSession(destination, newSession);
+      return;
     }
 
     const updated: BtpBaseSessionData = {

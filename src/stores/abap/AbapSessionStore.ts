@@ -46,6 +46,12 @@ export class AbapSessionStore implements ISessionStore {
   constructor(directory: string, log?: ILogger) {
     this.directory = directory;
     this.log = log;
+    
+    // Ensure directory exists - create if it doesn't
+    if (!fs.existsSync(directory)) {
+      fs.mkdirSync(directory, { recursive: true });
+      this.log?.debug(`Created session directory: ${directory}`);
+    }
   }
   /**
    * Load session from file
@@ -253,13 +259,35 @@ export class AbapSessionStore implements ISessionStore {
   /**
    * Set authorization configuration
    * Updates values needed for obtaining and refreshing tokens
+   * Creates new session if it doesn't exist
    * @param destination Destination name
    * @param config IAuthorizationConfig with values to set
    */
   async setAuthorizationConfig(destination: string, config: IAuthorizationConfig): Promise<void> {
     const current = await this.loadRawSession(destination);
+    
     if (!current) {
-      throw new Error(`No session found for destination "${destination}"`);
+      // Session doesn't exist - try to get serviceUrl from connection config
+      // For ABAP, we need sapUrl to create session
+      const connConfig = await this.getConnectionConfig(destination);
+      const sapUrl = connConfig?.serviceUrl;
+      
+      if (!sapUrl) {
+        throw new Error(`Cannot set authorization config for destination "${destination}": session does not exist and serviceUrl is required for ABAP sessions. Call setConnectionConfig first.`);
+      }
+      
+      this.log?.debug(`Creating new session for ${destination} via setAuthorizationConfig: sapUrl(${sapUrl.substring(0, 40)}...)`);
+      
+      const newSession: AbapSessionData = {
+        sapUrl,
+        jwtToken: connConfig?.authorizationToken || '', // Use token from connection config if available
+        uaaUrl: config.uaaUrl,
+        uaaClientId: config.uaaClientId,
+        uaaClientSecret: config.uaaClientSecret,
+        refreshToken: config.refreshToken,
+      };
+      await this.saveSession(destination, newSession);
+      return;
     }
 
     // Update authorization fields
@@ -276,13 +304,31 @@ export class AbapSessionStore implements ISessionStore {
   /**
    * Set connection configuration
    * Updates values needed for connecting to services
+   * Creates new session if it doesn't exist
    * @param destination Destination name
    * @param config IConnectionConfig with values to set
    */
   async setConnectionConfig(destination: string, config: IConnectionConfig): Promise<void> {
     const current = await this.loadRawSession(destination);
+    
     if (!current) {
-      throw new Error(`No session found for destination "${destination}"`);
+      // Session doesn't exist - create new one
+      // For ABAP, serviceUrl is required
+      if (!config.serviceUrl) {
+        throw new Error(`Cannot create session for destination "${destination}": serviceUrl is required for ABAP sessions`);
+      }
+      
+      this.log?.debug(`Creating new session for ${destination} via setConnectionConfig: serviceUrl(${config.serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars)`);
+      
+      const newSession: AbapSessionData = {
+        sapUrl: config.serviceUrl,
+        jwtToken: config.authorizationToken || '',
+        sapClient: config.sapClient,
+        language: config.language,
+      };
+      await this.saveSession(destination, newSession);
+      this.log?.info(`Session created for ${destination}: serviceUrl(${config.serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars)`);
+      return;
     }
 
     // Update connection fields

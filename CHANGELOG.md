@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7] - 2025-12-08
+
+### Added
+- **Broker Usage Tests**: Added comprehensive test suites for broker usage scenarios
+  - Tests verify stores work correctly when used as in `AuthBroker` (without `saveSession`)
+  - Tests cover `setConnectionConfig` and `setAuthorizationConfig` on empty stores
+  - Tests verify session creation and updates in broker flow scenarios
+  - Test files: `*SessionStore.broker.test.ts` for all store types
+
+### Changed
+- **Session Store Initialization**: File-based session stores now automatically create directory in constructor
+  - `AbapSessionStore`, `BtpSessionStore`, `XsuaaSessionStore` create directory if it doesn't exist
+  - Stores are ready to use immediately after construction
+  - Directory creation is logged at debug level
+- **Session Creation Logic**: Session stores now automatically create sessions when calling `setConnectionConfig` or `setAuthorizationConfig`
+  - No need to call `saveSession` first - stores handle session creation internally
+  - `setConnectionConfig` creates new session if none exists (requires `serviceUrl` for ABAP)
+  - `setAuthorizationConfig` creates new session if none exists (for BTP/XSUAA, `mcpUrl` is optional)
+  - For ABAP: `setAuthorizationConfig` requires existing `serviceUrl` (from `setConnectionConfig` or throws error)
+  - This matches how `AuthBroker` uses stores - stores are now fully ready after construction
+- **Token Validation**: Updated validation to allow empty string for `jwtToken` in BTP/XSUAA stores
+  - Empty token is allowed (can be set later via `setConnectionConfig`)
+  - Only `undefined` or `null` tokens are rejected
+  - This enables creating sessions with authorization config first, then adding connection config
+
+### Fixed
+- **getConnectionConfig**: Fixed to allow empty string tokens (not just non-empty strings)
+  - Returns `null` only if token is `undefined` or `null`
+  - Empty string tokens are valid (can be set later)
+- **setConnectionConfig Updates**: Fixed to preserve existing token when updating connection config
+  - Only updates `jwtToken` if `authorizationToken` is provided in config
+  - Preserves existing token if `authorizationToken` is `undefined`
+
 ## [0.1.6] - 2025-12-08
 
 ### Added

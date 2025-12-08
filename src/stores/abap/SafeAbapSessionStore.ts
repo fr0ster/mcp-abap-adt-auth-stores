@@ -75,12 +75,6 @@ export class SafeAbapSessionStore implements ISessionStore {
     return internal;
   }
 
-  private isValidSessionConfig(config: unknown): config is AbapSessionData {
-    if (!config || typeof config !== 'object') return false;
-    const obj = config as Record<string, unknown>;
-    // Accept both IConfig format (serviceUrl, authorizationToken) and internal format (sapUrl, jwtToken)
-    return (('serviceUrl' in obj || 'sapUrl' in obj) && ('authorizationToken' in obj || 'jwtToken' in obj));
-  }
 
   async loadSession(destination: string): Promise<IConfig | null> {
     this.log?.debug(`Loading session for destination: ${destination}`);
@@ -118,7 +112,7 @@ export class SafeAbapSessionStore implements ISessionStore {
 
   async getConnectionConfig(destination: string): Promise<IConnectionConfig | null> {
     const sessionConfig = this.loadRawSession(destination);
-    if (!this.isValidSessionConfig(sessionConfig)) {
+    if (!sessionConfig) {
       return null;
     }
 
@@ -136,9 +130,27 @@ export class SafeAbapSessionStore implements ISessionStore {
 
   async setConnectionConfig(destination: string, config: IConnectionConfig): Promise<void> {
     const current = this.loadRawSession(destination);
-    if (!this.isValidSessionConfig(current)) {
-      throw new Error(`No ABAP session found for destination "${destination}"`);
+    
+    if (!current) {
+      // Session doesn't exist - create new one
+      // For ABAP, serviceUrl is required
+      if (!config.serviceUrl) {
+        throw new Error(`Cannot create session for destination "${destination}": serviceUrl is required for ABAP sessions`);
+      }
+      
+      this.log?.debug(`Creating new session for ${destination} via setConnectionConfig: serviceUrl(${config.serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars)`);
+      
+      const newSession: AbapSessionData = {
+        sapUrl: config.serviceUrl,
+        jwtToken: config.authorizationToken || '',
+        sapClient: config.sapClient,
+        language: config.language,
+      };
+      await this.saveSession(destination, newSession);
+      this.log?.info(`Session created for ${destination}: serviceUrl(${config.serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars)`);
+      return;
     }
+    
     const updated: AbapSessionData = {
       ...current,
       sapUrl: config.serviceUrl || current.sapUrl,
@@ -151,7 +163,7 @@ export class SafeAbapSessionStore implements ISessionStore {
 
   async getAuthorizationConfig(destination: string): Promise<IAuthorizationConfig | null> {
     const sessionConfig = this.loadRawSession(destination);
-    if (!this.isValidSessionConfig(sessionConfig)) {
+    if (!sessionConfig) {
       return null;
     }
 
@@ -169,8 +181,29 @@ export class SafeAbapSessionStore implements ISessionStore {
 
   async setAuthorizationConfig(destination: string, config: IAuthorizationConfig): Promise<void> {
     const current = this.loadRawSession(destination);
-    if (!this.isValidSessionConfig(current)) {
-      throw new Error(`No ABAP session found for destination "${destination}"`);
+    
+    if (!current) {
+      // Session doesn't exist - try to get serviceUrl from connection config
+      // For ABAP, we need sapUrl to create session
+      const connConfig = await this.getConnectionConfig(destination);
+      const sapUrl = connConfig?.serviceUrl;
+      
+      if (!sapUrl) {
+        throw new Error(`Cannot set authorization config for destination "${destination}": session does not exist and serviceUrl is required for ABAP sessions. Call setConnectionConfig first.`);
+      }
+      
+      this.log?.debug(`Creating new session for ${destination} via setAuthorizationConfig: sapUrl(${sapUrl.substring(0, 40)}...)`);
+      
+      const newSession: AbapSessionData = {
+        sapUrl,
+        jwtToken: connConfig?.authorizationToken || '', // Use token from connection config if available
+        uaaUrl: config.uaaUrl,
+        uaaClientId: config.uaaClientId,
+        uaaClientSecret: config.uaaClientSecret,
+        refreshToken: config.refreshToken,
+      };
+      await this.saveSession(destination, newSession);
+      return;
     }
 
     const updated: AbapSessionData = {
