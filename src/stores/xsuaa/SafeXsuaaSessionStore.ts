@@ -5,7 +5,7 @@
  * Does not persist to disk - suitable for secure environments.
  */
 
-import type { IConnectionConfig, ISessionStore, IAuthorizationConfig, IConfig } from '@mcp-abap-adt/interfaces';
+import type { IConnectionConfig, ISessionStore, IAuthorizationConfig, IConfig, ILogger } from '@mcp-abap-adt/interfaces';
 
 // Internal type for XSUAA session storage (same as base BTP, without sapUrl)
 interface XsuaaSessionData {
@@ -25,6 +25,15 @@ interface XsuaaSessionData {
  */
 export class SafeXsuaaSessionStore implements ISessionStore {
   private sessions: Map<string, XsuaaSessionData> = new Map();
+  private log?: ILogger;
+
+  /**
+   * Create a new SafeXsuaaSessionStore instance
+   * @param log Optional logger for logging operations
+   */
+  constructor(log?: ILogger) {
+    this.log = log;
+  }
 
   private loadRawSession(destination: string): XsuaaSessionData | null {
     return this.sessions.get(destination) || null;
@@ -78,13 +87,18 @@ export class SafeXsuaaSessionStore implements ISessionStore {
   }
 
   async loadSession(destination: string): Promise<IConfig | null> {
+    this.log?.debug(`Loading session for destination: ${destination}`);
     const authConfig = await this.getAuthorizationConfig(destination);
     const connConfig = await this.getConnectionConfig(destination);
     
     if (!authConfig && !connConfig) {
+      this.log?.debug(`Session not found for destination: ${destination}`);
       return null;
     }
     
+    const tokenLength = connConfig?.authorizationToken?.length || 0;
+    const hasRefreshToken = !!authConfig?.refreshToken;
+    this.log?.info(`Session loaded for ${destination}: token(${tokenLength} chars), hasRefreshToken(${hasRefreshToken}), serviceUrl(${connConfig?.serviceUrl ? connConfig.serviceUrl.substring(0, 40) + '...' : 'none'})`);
     return {
       ...(authConfig || {}),
       ...(connConfig || {}),
@@ -92,8 +106,13 @@ export class SafeXsuaaSessionStore implements ISessionStore {
   }
 
   async saveSession(destination: string, config: IConfig): Promise<void> {
+    this.log?.debug(`Saving session for destination: ${destination}`);
     this.validateSessionConfig(config);
     const internalConfig = this.convertToInternalFormat(config);
+    const obj = config as Record<string, unknown>;
+    const tokenLength = (obj.authorizationToken || obj.jwtToken) ? String(obj.authorizationToken || obj.jwtToken).length : 0;
+    const hasRefreshToken = !!(obj.refreshToken);
+    this.log?.info(`Session saved for ${destination}: token(${tokenLength} chars), hasRefreshToken(${hasRefreshToken}), serviceUrl(${obj.serviceUrl || obj.mcpUrl ? String(obj.serviceUrl || obj.mcpUrl).substring(0, 40) + '...' : 'none'})`);
     this.sessions.set(destination, internalConfig);
   }
 

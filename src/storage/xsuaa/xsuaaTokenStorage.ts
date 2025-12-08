@@ -2,6 +2,7 @@
  * XSUAA Token storage - saves tokens to .env files with XSUAA_* variables
  */
 
+import type { ILogger } from '@mcp-abap-adt/interfaces';
 import * as fs from 'fs';
 import * as path from 'path';
 import { XSUAA_AUTHORIZATION_VARS, XSUAA_CONNECTION_VARS } from '../../utils/constants';
@@ -21,24 +22,32 @@ interface XsuaaSessionConfig {
  * @param destination Destination name
  * @param savePath Path where to save the file
  * @param config XSUAA session configuration to save
+ * @param log Optional logger for logging operations
  */
 export async function saveXsuaaTokenToEnv(
   destination: string,
   savePath: string,
-  config: XsuaaSessionConfig
+  config: XsuaaSessionConfig,
+  log?: ILogger
 ): Promise<void> {
-  // Ensure directory exists
-  if (!fs.existsSync(savePath)) {
-    fs.mkdirSync(savePath, { recursive: true });
-  }
-
   const envFilePath = path.join(savePath, `${destination}.env`);
   const tempFilePath = `${envFilePath}.tmp`;
+  log?.debug(`Saving XSUAA token to env file: ${envFilePath}`);
+  log?.debug(`Config to save: token(${config.jwtToken.length} chars), hasRefreshToken(${!!config.refreshToken}), hasUaaUrl(${!!config.uaaUrl}), mcpUrl(${config.mcpUrl ? config.mcpUrl.substring(0, 50) + '...' : 'none'})`);
+
+  // Ensure directory exists
+  if (!fs.existsSync(savePath)) {
+    log?.debug(`Creating directory: ${savePath}`);
+    fs.mkdirSync(savePath, { recursive: true });
+  }
 
   // Read existing .env file if it exists
   let existingContent = '';
   if (fs.existsSync(envFilePath)) {
     existingContent = fs.readFileSync(envFilePath, 'utf8');
+    log?.debug(`Reading existing XSUAA env file, size: ${existingContent.length} bytes`);
+  } else {
+    log?.debug(`XSUAA env file does not exist, creating new one`);
   }
 
   // Parse existing content to preserve other values
@@ -64,6 +73,8 @@ export async function saveXsuaaTokenToEnv(
       existingVars.set(key, value);
     }
   }
+  
+  log?.debug(`Preserved ${existingVars.size} existing variables from XSUAA env file`);
 
   // Update with new values (XSUAA_* variables)
   // mcpUrl can be saved as additional variable (not part of CONNECTION_VARS, but can be stored for convenience)
@@ -102,10 +113,13 @@ export async function saveXsuaaTokenToEnv(
 
   const envContent = envLines.join('\n') + '\n';
 
+  log?.debug(`Writing ${envLines.length} XSUAA variables to env file: ${Object.keys(config).join(', ')}`);
+
   // Write to temp file
   fs.writeFileSync(tempFilePath, envContent, 'utf8');
 
   // Atomic rename
   fs.renameSync(tempFilePath, envFilePath);
+  log?.info(`XSUAA token saved to ${envFilePath}: token(${config.jwtToken.length} chars), mcpUrl(${config.mcpUrl ? config.mcpUrl.substring(0, 50) + '...' : 'none'}), variables(${envLines.length})`);
 }
 

@@ -5,7 +5,7 @@
  * Stores to {destination}.env files with XSUAA_* variables.
  */
 
-import type { IAuthorizationConfig, IConnectionConfig, ISessionStore, IConfig } from '@mcp-abap-adt/interfaces';
+import type { IAuthorizationConfig, IConnectionConfig, ISessionStore, IConfig, ILogger } from '@mcp-abap-adt/interfaces';
 import { loadXsuaaEnvFile } from '../../storage/xsuaa/xsuaaEnvLoader';
 import { saveXsuaaTokenToEnv } from '../../storage/xsuaa/xsuaaTokenStorage';
 import * as fs from 'fs';
@@ -32,13 +32,16 @@ interface XsuaaSessionData {
  */
 export class XsuaaSessionStore implements ISessionStore {
   protected directory: string;
+  private log?: ILogger;
 
   /**
    * Create a new XsuaaSessionStore instance
    * @param directory Directory where session .env files are located
+   * @param log Optional logger for logging operations
    */
-  constructor(directory: string) {
+  constructor(directory: string, log?: ILogger) {
     this.directory = directory;
+    this.log = log;
   }
   /**
    * Get file name for destination
@@ -60,7 +63,7 @@ export class XsuaaSessionStore implements ISessionStore {
     const destination = fileName.replace(/\.env$/, '');
     
     // Load from .env file using XSUAA env loader (reads XSUAA_* variables)
-    const xsuaaConfig = await loadXsuaaEnvFile(destination, this.directory);
+    const xsuaaConfig = await loadXsuaaEnvFile(destination, this.directory, this.log);
     if (!xsuaaConfig) {
       return null;
     }
@@ -119,7 +122,7 @@ export class XsuaaSessionStore implements ISessionStore {
 
     // Save using XSUAA token storage
     const xsuaaData = config as unknown as XsuaaSessionData;
-    await saveXsuaaTokenToEnv(destination, savePath, xsuaaData);
+    await saveXsuaaTokenToEnv(destination, savePath, xsuaaData, this.log);
   }
 
   /**
@@ -128,16 +131,22 @@ export class XsuaaSessionStore implements ISessionStore {
    * @param config Session configuration to save
    */
   async saveSession(destination: string, config: IConfig): Promise<void> {
+    this.log?.debug(`Saving session for destination: ${destination}`);
     const fileName = `${destination}.env`;
     const filePath = path.join(this.directory, fileName);
 
     // Ensure directory exists
     if (!fs.existsSync(this.directory)) {
+      this.log?.debug(`Creating directory: ${this.directory}`);
       fs.mkdirSync(this.directory, { recursive: true });
     }
 
     // Convert IConfig to internal format for ENV file
     const internalConfig = this.convertToInternalFormat(config);
+    const obj = config as Record<string, unknown>;
+    const tokenLength = (obj.authorizationToken || obj.jwtToken) ? String(obj.authorizationToken || obj.jwtToken).length : 0;
+    const hasRefreshToken = !!(obj.refreshToken);
+    this.log?.info(`Session saved for ${destination}: token(${tokenLength} chars), hasRefreshToken(${hasRefreshToken}), serviceUrl(${obj.serviceUrl || obj.mcpUrl ? String(obj.serviceUrl || obj.mcpUrl).substring(0, 40) + '...' : 'none'})`);
     await this.saveToFile(filePath, internalConfig);
   }
 
@@ -161,14 +170,19 @@ export class XsuaaSessionStore implements ISessionStore {
    * @returns IConfig with actual values or null if not found
    */
   async loadSession(destination: string): Promise<IConfig | null> {
+    this.log?.debug(`Loading session for destination: ${destination}`);
     const authConfig = await this.getAuthorizationConfig(destination);
     const connConfig = await this.getConnectionConfig(destination);
     
     // Return null if both are null, otherwise return composition (even if one is null)
     if (!authConfig && !connConfig) {
+      this.log?.debug(`Session not found for destination: ${destination}`);
       return null;
     }
     
+    const tokenLength = connConfig?.authorizationToken?.length || 0;
+    const hasRefreshToken = !!authConfig?.refreshToken;
+    this.log?.info(`Session loaded for ${destination}: token(${tokenLength} chars), hasRefreshToken(${hasRefreshToken}), serviceUrl(${connConfig?.serviceUrl ? connConfig.serviceUrl.substring(0, 40) + '...' : 'none'})`);
     return {
       ...(authConfig || {}),
       ...(connConfig || {}),
@@ -201,13 +215,16 @@ export class XsuaaSessionStore implements ISessionStore {
   async getConnectionConfig(destination: string): Promise<IConnectionConfig | null> {
     const sessionConfig = await this.loadRawSession(destination);
     if (!sessionConfig) {
+      this.log?.debug(`Connection config not found for ${destination}`);
       return null;
     }
 
     if (!sessionConfig.jwtToken) {
+      this.log?.warn(`Connection config for ${destination} missing required field: jwtToken`);
       return null;
     }
 
+    this.log?.debug(`Connection config loaded for ${destination}: token(${sessionConfig.jwtToken.length} chars), serviceUrl(${sessionConfig.mcpUrl ? sessionConfig.mcpUrl.substring(0, 40) + '...' : 'none'})`);
     return {
       serviceUrl: sessionConfig.mcpUrl, // May be undefined for XSUAA
       authorizationToken: sessionConfig.jwtToken,
@@ -233,13 +250,16 @@ export class XsuaaSessionStore implements ISessionStore {
   async getAuthorizationConfig(destination: string): Promise<IAuthorizationConfig | null> {
     const sessionConfig = await this.loadRawSession(destination);
     if (!sessionConfig) {
+      this.log?.debug(`Authorization config not found for ${destination}`);
       return null;
     }
 
     if (!sessionConfig.uaaUrl || !sessionConfig.uaaClientId || !sessionConfig.uaaClientSecret) {
+      this.log?.warn(`Authorization config for ${destination} missing required UAA fields`);
       return null;
     }
 
+    this.log?.debug(`Authorization config loaded for ${destination}: uaaUrl(${sessionConfig.uaaUrl.substring(0, 30)}...), hasRefreshToken(${!!sessionConfig.refreshToken})`);
     return {
       uaaUrl: sessionConfig.uaaUrl,
       uaaClientId: sessionConfig.uaaClientId,

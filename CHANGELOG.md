@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] - 2025-12-08
+
+### Added
+- **Comprehensive Logging System**: Added optional logging support throughout the package
+  - All stores, parsers, and storage functions now accept optional `ILogger` parameter
+  - Logging shows detailed information: file paths, file sizes, parsed data structure, operation results
+  - Logging works by default in test environment (`NODE_ENV === 'test'`)
+  - Controlled via environment variables: `DEBUG_AUTH_STORES`, `LOG_LEVEL`
+- **Test Logger Helper**: Added `createTestLogger` helper for tests
+  - Respects `DEBUG_AUTH_STORES`, `DEBUG`, and `LOG_LEVEL` environment variables
+  - Formats messages and meta into single-line output
+  - Shows stack traces for debug and error levels
+- **Logging in Parsers**: Added logging to `AbapServiceKeyParser` and `XsuaaServiceKeyParser`
+  - Logs parsing operations, validation checks, and results
+  - Shows structure of parsed data (keys, fields, validation results)
+- **Logging in Storage**: Added logging to all storage functions
+  - `loadEnvFile`, `saveTokenToEnv` (ABAP)
+  - `loadXsuaaEnvFile`, `saveXsuaaTokenToEnv` (XSUAA)
+  - Logs file operations: reading, writing, file sizes, preserved variables
+
+### Changed
+- **Store Constructors**: All stores now accept optional `log?: ILogger` parameter
+  - `AbapServiceKeyStore`, `BtpServiceKeyStore`, `XsuaaServiceKeyStore`
+  - `AbapSessionStore`, `BtpSessionStore`, `XsuaaSessionStore`
+  - `SafeAbapSessionStore`, `SafeBtpSessionStore`, `SafeXsuaaSessionStore`
+- **Parser Constructors**: Parsers now accept optional `log?: ILogger` parameter
+  - `AbapServiceKeyParser`, `XsuaaServiceKeyParser`
+- **Storage Functions**: Storage functions now accept optional `log?: ILogger` parameter
+  - All storage functions pass logger through to enable detailed logging
+- **Logging Format**: All log messages are concise, single-line strings with embedded key data
+  - Example: `Reading service key file: /path/to/file.json`
+  - Example: `File read successfully, size: 121 bytes, keys: uaa`
+  - Example: `Session saved: token(2263 chars), hasRefreshToken(true), sapUrl(https://...)`
+
 ## [0.1.5] - 2025-12-07
 
 ### Changed

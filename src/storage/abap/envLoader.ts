@@ -2,6 +2,7 @@
  * Environment file loader - loads .env files by destination name for ABAP
  */
 
+import type { ILogger } from '@mcp-abap-adt/interfaces';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
@@ -23,26 +24,34 @@ interface EnvConfig {
  * Load environment configuration from {destination}.env file
  * @param destination Destination name
  * @param directory Directory where the file is located
+ * @param log Optional logger for logging operations
  * @returns EnvConfig object or null if file not found
  */
-export async function loadEnvFile(destination: string, directory: string): Promise<EnvConfig | null> {
+export async function loadEnvFile(destination: string, directory: string, log?: ILogger): Promise<EnvConfig | null> {
   const fileName = `${destination}.env`;
   const envFilePath = path.join(directory, fileName);
+  log?.debug(`Reading env file: ${envFilePath}`);
 
   if (!fs.existsSync(envFilePath)) {
+    log?.debug(`Env file not found: ${envFilePath}`);
     return null;
   }
 
   try {
     // Read and parse .env file
     const envContent = fs.readFileSync(envFilePath, 'utf8');
+    log?.debug(`Env file read successfully, size: ${envContent.length} bytes`);
     const parsed = dotenv.parse(envContent);
+    log?.debug(`Parsed env variables: ${Object.keys(parsed).join(', ')}`);
 
     // Extract required fields
     const sapUrl = parsed[ABAP_CONNECTION_VARS.SERVICE_URL];
     const jwtToken = parsed[ABAP_CONNECTION_VARS.AUTHORIZATION_TOKEN];
 
+    log?.debug(`Extracted fields: hasSapUrl(${!!sapUrl}), hasJwtToken(${!!jwtToken})`);
+
     if (!sapUrl || !jwtToken) {
+      log?.warn(`Env file missing required fields: sapUrl(${!!sapUrl}), jwtToken(${!!jwtToken})`);
       return null;
     }
 
@@ -76,8 +85,10 @@ export async function loadEnvFile(destination: string, directory: string): Promi
       config.language = parsed[ABAP_CONNECTION_VARS.SAP_LANGUAGE].trim();
     }
 
+    log?.info(`Env config loaded from ${envFilePath}: sapUrl(${config.sapUrl.substring(0, 50)}...), token(${config.jwtToken.length} chars), hasRefreshToken(${!!config.refreshToken}), hasUaaUrl(${!!config.uaaUrl})`);
     return config;
   } catch (error) {
+    log?.error(`Failed to load env file from ${envFilePath}: ${error instanceof Error ? error.message : String(error)}`);
     throw new Error(
       `Failed to load environment file for destination "${destination}": ${error instanceof Error ? error.message : String(error)}`
     );

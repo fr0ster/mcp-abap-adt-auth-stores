@@ -6,7 +6,7 @@
  * This extends base BTP store by adding sapUrl requirement.
  */
 
-import type { IAuthorizationConfig, IConnectionConfig, ISessionStore, IConfig } from '@mcp-abap-adt/interfaces';
+import type { IAuthorizationConfig, IConnectionConfig, ISessionStore, IConfig, ILogger } from '@mcp-abap-adt/interfaces';
 import { loadEnvFile } from '../../storage/abap/envLoader';
 import { saveTokenToEnv } from '../../storage/abap/tokenStorage';
 import * as fs from 'fs';
@@ -36,13 +36,16 @@ interface AbapSessionData {
  */
 export class AbapSessionStore implements ISessionStore {
   protected directory: string;
+  private log?: ILogger;
 
   /**
    * Create a new AbapSessionStore instance
    * @param directory Directory where session .env files are located
+   * @param log Optional logger for logging operations
    */
-  constructor(directory: string) {
+  constructor(directory: string, log?: ILogger) {
     this.directory = directory;
+    this.log = log;
   }
   /**
    * Load session from file
@@ -103,7 +106,7 @@ export class AbapSessionStore implements ISessionStore {
       uaaClientSecret: abapConfig.uaaClientSecret,
       sapClient: abapConfig.sapClient,
       language: abapConfig.language,
-    });
+    }, this.log);
   }
 
   /**
@@ -112,16 +115,22 @@ export class AbapSessionStore implements ISessionStore {
    * @param config Session configuration to save
    */
   async saveSession(destination: string, config: IConfig): Promise<void> {
+    this.log?.debug(`Saving session for destination: ${destination}`);
     const fileName = `${destination}.env`;
     const filePath = path.join(this.directory, fileName);
 
     // Ensure directory exists
     if (!fs.existsSync(this.directory)) {
+      this.log?.debug(`Creating directory: ${this.directory}`);
       fs.mkdirSync(this.directory, { recursive: true });
     }
 
     // Convert IConfig to internal format for ENV file
     const internalConfig = this.convertToInternalFormat(config);
+    const obj = config as Record<string, unknown>;
+    const tokenLength = (obj.authorizationToken || obj.jwtToken) ? String(obj.authorizationToken || obj.jwtToken).length : 0;
+    const hasRefreshToken = !!(obj.refreshToken);
+    this.log?.info(`Session saved for ${destination}: token(${tokenLength} chars), hasRefreshToken(${hasRefreshToken}), sapUrl(${obj.serviceUrl || obj.sapUrl ? String(obj.serviceUrl || obj.sapUrl).substring(0, 40) + '...' : 'none'})`);
     await this.saveToFile(filePath, internalConfig);
   }
 
@@ -145,14 +154,19 @@ export class AbapSessionStore implements ISessionStore {
    * @returns IConfig with actual values or null if not found
    */
   async loadSession(destination: string): Promise<IConfig | null> {
+    this.log?.debug(`Loading session for destination: ${destination}`);
     const authConfig = await this.getAuthorizationConfig(destination);
     const connConfig = await this.getConnectionConfig(destination);
     
     // Return null if both are null, otherwise return composition (even if one is null)
     if (!authConfig && !connConfig) {
+      this.log?.debug(`Session not found for destination: ${destination}`);
       return null;
     }
     
+    const tokenLength = connConfig?.authorizationToken?.length || 0;
+    const hasRefreshToken = !!authConfig?.refreshToken;
+    this.log?.info(`Session loaded for ${destination}: token(${tokenLength} chars), hasRefreshToken(${hasRefreshToken}), sapUrl(${connConfig?.serviceUrl ? connConfig.serviceUrl.substring(0, 40) + '...' : 'none'})`);
     return {
       ...(authConfig || {}),
       ...(connConfig || {}),
@@ -191,13 +205,16 @@ export class AbapSessionStore implements ISessionStore {
   async getAuthorizationConfig(destination: string): Promise<IAuthorizationConfig | null> {
     const sessionConfig = await this.loadRawSession(destination);
     if (!sessionConfig) {
+      this.log?.debug(`Authorization config not found for ${destination}`);
       return null;
     }
 
     if (!sessionConfig.uaaUrl || !sessionConfig.uaaClientId || !sessionConfig.uaaClientSecret) {
+      this.log?.warn(`Authorization config for ${destination} missing required UAA fields`);
       return null;
     }
 
+    this.log?.debug(`Authorization config loaded for ${destination}: uaaUrl(${sessionConfig.uaaUrl.substring(0, 30)}...), hasRefreshToken(${!!sessionConfig.refreshToken})`);
     return {
       uaaUrl: sessionConfig.uaaUrl,
       uaaClientId: sessionConfig.uaaClientId,
@@ -215,13 +232,16 @@ export class AbapSessionStore implements ISessionStore {
   async getConnectionConfig(destination: string): Promise<IConnectionConfig | null> {
     const sessionConfig = await this.loadRawSession(destination);
     if (!sessionConfig) {
+      this.log?.debug(`Connection config not found for ${destination}`);
       return null;
     }
 
     if (!sessionConfig.jwtToken || !sessionConfig.sapUrl) {
+      this.log?.warn(`Connection config for ${destination} missing required fields: jwtToken(${!!sessionConfig.jwtToken}), sapUrl(${!!sessionConfig.sapUrl})`);
       return null;
     }
 
+    this.log?.debug(`Connection config loaded for ${destination}: token(${sessionConfig.jwtToken.length} chars), sapUrl(${sessionConfig.sapUrl.substring(0, 40)}...)`);
     return {
       serviceUrl: sessionConfig.sapUrl,
       authorizationToken: sessionConfig.jwtToken,

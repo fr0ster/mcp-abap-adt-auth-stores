@@ -2,6 +2,7 @@
  * XSUAA Environment file loader - loads .env files with XSUAA_* variables for XSUAA
  */
 
+import type { ILogger } from '@mcp-abap-adt/interfaces';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
@@ -22,25 +23,33 @@ interface XsuaaSessionConfig {
  * Reads XSUAA_* variables instead of SAP_* variables
  * @param destination Destination name
  * @param directory Directory where the file is located
+ * @param log Optional logger for logging operations
  * @returns XsuaaSessionConfig object or null if file not found
  */
-export async function loadXsuaaEnvFile(destination: string, directory: string): Promise<XsuaaSessionConfig | null> {
+export async function loadXsuaaEnvFile(destination: string, directory: string, log?: ILogger): Promise<XsuaaSessionConfig | null> {
   const fileName = `${destination}.env`;
   const envFilePath = path.join(directory, fileName);
+  log?.debug(`Reading XSUAA env file: ${envFilePath}`);
 
   if (!fs.existsSync(envFilePath)) {
+    log?.debug(`XSUAA env file not found: ${envFilePath}`);
     return null;
   }
 
   try {
     // Read and parse .env file
     const envContent = fs.readFileSync(envFilePath, 'utf8');
+    log?.debug(`XSUAA env file read successfully, size: ${envContent.length} bytes`);
     const parsed = dotenv.parse(envContent);
+    log?.debug(`Parsed XSUAA env variables: ${Object.keys(parsed).filter(k => k.startsWith('XSUAA_')).join(', ')}`);
 
     // Extract required fields (XSUAA_* variables)
     const jwtToken = parsed[XSUAA_CONNECTION_VARS.AUTHORIZATION_TOKEN];
 
+    log?.debug(`Extracted fields: hasJwtToken(${!!jwtToken})`);
+
     if (!jwtToken) {
+      log?.warn(`XSUAA env file missing required field: jwtToken`);
       return null;
     }
 
@@ -70,8 +79,10 @@ export async function loadXsuaaEnvFile(destination: string, directory: string): 
       config.uaaClientSecret = parsed[XSUAA_AUTHORIZATION_VARS.UAA_CLIENT_SECRET].trim();
     }
 
+    log?.info(`XSUAA env config loaded from ${envFilePath}: token(${config.jwtToken.length} chars), hasRefreshToken(${!!config.refreshToken}), hasUaaUrl(${!!config.uaaUrl}), mcpUrl(${config.mcpUrl ? config.mcpUrl.substring(0, 50) + '...' : 'none'})`);
     return config;
   } catch (error) {
+    log?.error(`Failed to load XSUAA env file from ${envFilePath}: ${error instanceof Error ? error.message : String(error)}`);
     throw new Error(
       `Failed to load XSUAA environment file for destination "${destination}": ${error instanceof Error ? error.message : String(error)}`
     );

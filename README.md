@@ -235,6 +235,80 @@ const abapKey = await loadServiceKey('TRIAL', '/path/to/service-keys');
 const xsuaaKey = await loadXSUAAServiceKey('mcp', '/path/to/service-keys');
 ```
 
+## Debug Logging
+
+Stores support optional logging through the `ILogger` interface. To enable detailed logging:
+
+### Using Logger in Code
+
+```typescript
+import { AbapServiceKeyStore } from '@mcp-abap-adt/auth-stores';
+import type { ILogger } from '@mcp-abap-adt/interfaces';
+
+// Create logger (or use your own implementation)
+const logger: ILogger = {
+  debug: (msg) => console.debug(msg),
+  info: (msg) => console.info(msg),
+  warn: (msg) => console.warn(msg),
+  error: (msg) => console.error(msg),
+};
+
+// Pass logger to store constructor
+const store = new AbapServiceKeyStore('/path/to/service-keys', logger);
+const sessionStore = new AbapSessionStore('/path/to/sessions', logger);
+```
+
+### Using Test Logger in Tests
+
+For tests, use the `createTestLogger` helper which respects environment variables:
+
+```typescript
+import { createTestLogger } from './__tests__/helpers/testLogger';
+
+// Logger will output only if DEBUG_AUTH_STORES=true is set
+const logger = createTestLogger('MY-TEST');
+const store = new AbapServiceKeyStore('/path/to/service-keys', logger);
+```
+
+### Environment Variables
+
+To enable logging in tests or when using `createTestLogger`:
+
+```bash
+# Enable logging for auth stores
+DEBUG_AUTH_STORES=true npm test
+
+# Or enable via general DEBUG variable
+DEBUG=true npm test
+
+# Or include in DEBUG list
+DEBUG=auth-stores npm test
+
+# Set log level (debug, info, warn, error)
+LOG_LEVEL=debug npm test
+```
+
+**Note**: Logging is enabled by default in test environment (`NODE_ENV === 'test'`). To disable, set `DEBUG_AUTH_STORES=false`.
+
+Logging shows:
+- **File operations**: Which files are read/written, file sizes, file paths
+- **Parsing operations**: Structure of parsed data, validation results, keys found
+- **Storage operations**: What data is saved/loaded, token lengths, refresh token presence, URLs
+- **Errors**: Detailed error information with context
+
+Example output with `LOG_LEVEL=debug`:
+```
+[TEST-STORE] [DEBUG] Reading service key file: /path/to/TRIAL.json
+[TEST-STORE] [DEBUG] File read successfully, size: 121 bytes, keys: uaa
+[TEST-STORE] [DEBUG] Parsed service key structure: hasUaa(true), uaaKeys(url, clientid, clientsecret)
+[TEST-STORE] Authorization config loaded from /path/to/TRIAL.json: uaaUrl(https://...authentication...), clientId(test-client...)
+[TEST-STORE] [DEBUG] Reading env file: /path/to/TRIAL.env
+[TEST-STORE] [DEBUG] Env file read successfully, size: 245 bytes
+[TEST-STORE] Session loaded for TRIAL: token(2263 chars), hasRefreshToken(true), sapUrl(https://...abap...)
+```
+
+**Note**: Logging only works when a logger is explicitly provided. Stores will not output anything to console if no logger is passed.
+
 ## Testing
 
 The package includes both unit tests (with mocked file system) and integration tests (with real files).

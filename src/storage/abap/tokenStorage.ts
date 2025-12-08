@@ -2,6 +2,7 @@
  * Token storage - saves tokens to .env files for ABAP
  */
 
+import type { ILogger } from '@mcp-abap-adt/interfaces';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ABAP_AUTHORIZATION_VARS, ABAP_CONNECTION_VARS } from '../../utils/constants';
@@ -23,24 +24,32 @@ interface EnvConfig {
  * @param destination Destination name
  * @param savePath Path where to save the file
  * @param config Configuration to save
+ * @param log Optional logger for logging operations
  */
 export async function saveTokenToEnv(
   destination: string,
   savePath: string,
-  config: Partial<EnvConfig> & { sapUrl?: string; jwtToken: string }
+  config: Partial<EnvConfig> & { sapUrl?: string; jwtToken: string },
+  log?: ILogger
 ): Promise<void> {
-  // Ensure directory exists
-  if (!fs.existsSync(savePath)) {
-    fs.mkdirSync(savePath, { recursive: true });
-  }
-
   const envFilePath = path.join(savePath, `${destination}.env`);
   const tempFilePath = `${envFilePath}.tmp`;
+  log?.debug(`Saving token to env file: ${envFilePath}`);
+  log?.debug(`Config to save: hasSapUrl(${!!config.sapUrl}), token(${config.jwtToken.length} chars), hasRefreshToken(${!!config.refreshToken}), hasUaaUrl(${!!config.uaaUrl})`);
+
+  // Ensure directory exists
+  if (!fs.existsSync(savePath)) {
+    log?.debug(`Creating directory: ${savePath}`);
+    fs.mkdirSync(savePath, { recursive: true });
+  }
 
   // Read existing .env file if it exists
   let existingContent = '';
   if (fs.existsSync(envFilePath)) {
     existingContent = fs.readFileSync(envFilePath, 'utf8');
+    log?.debug(`Reading existing env file, size: ${existingContent.length} bytes`);
+  } else {
+    log?.debug(`Env file does not exist, creating new one`);
   }
 
   // Parse existing content to preserve other values
@@ -60,6 +69,8 @@ export async function saveTokenToEnv(
       existingVars.set(key, value);
     }
   }
+  
+  log?.debug(`Preserved ${existingVars.size} existing variables from env file`);
 
   // Update with new values
   if (config.sapUrl) {
@@ -103,10 +114,13 @@ export async function saveTokenToEnv(
 
   const envContent = envLines.join('\n') + '\n';
 
+  log?.debug(`Writing ${envLines.length} variables to env file: ${Object.keys(config).join(', ')}`);
+
   // Write to temp file
   fs.writeFileSync(tempFilePath, envContent, 'utf8');
 
   // Atomic rename
   fs.renameSync(tempFilePath, envFilePath);
+  log?.info(`Token saved to ${envFilePath}: token(${config.jwtToken.length} chars), sapUrl(${config.sapUrl ? config.sapUrl.substring(0, 50) + '...' : 'none'}), variables(${envLines.length})`);
 }
 

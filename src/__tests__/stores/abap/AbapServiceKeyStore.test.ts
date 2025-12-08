@@ -3,6 +3,7 @@
  */
 
 import { AbapServiceKeyStore } from '../../../stores/abap/AbapServiceKeyStore';
+import { createTestLogger } from '../../helpers/testLogger';
 import * as fs from 'fs';
 import * as path from 'path';
 import { jest } from '@jest/globals';
@@ -112,6 +113,32 @@ describe('AbapServiceKeyStore', () => {
       expect(result?.uaaUrl).toBe(serviceKey.uaa.url);
       expect(result?.uaaClientId).toBe(serviceKey.uaa.clientid);
       expect(result?.uaaClientSecret).toBe(serviceKey.uaa.clientsecret);
+    });
+
+    it('should log operations when logger is provided', async () => {
+      const logger = createTestLogger('TEST-STORE');
+      const storeWithLogger = new AbapServiceKeyStore(testDir, logger);
+      const destination = 'TRIAL';
+      const serviceKey = {
+        uaa: {
+          url: 'https://test.authentication.sap.hana.ondemand.com',
+          clientid: 'test-client',
+          clientsecret: 'test-secret',
+        },
+      };
+
+      jest.spyOn(logger, 'debug');
+      jest.spyOn(logger, 'info');
+
+      mockFs.existsSync.mockReturnValue(true);
+      mockFs.readFileSync.mockReturnValue(JSON.stringify(serviceKey));
+
+      await storeWithLogger.getAuthorizationConfig(destination);
+
+      expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining(`Reading service key file:`));
+      expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining(`File read successfully`));
+      expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining(`Parsed service key structure`));
+      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining(`Authorization config loaded from`));
     });
 
     it('should return null if file not found', async () => {
