@@ -39,6 +39,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **setConnectionConfig Updates**: Fixed to preserve existing token when updating connection config
   - Only updates `jwtToken` if `authorizationToken` is provided in config
   - Preserves existing token if `authorizationToken` is `undefined`
+- **Safe Session Stores**: Fixed session creation in `setConnectionConfig` and `setAuthorizationConfig`
+  - Now saves directly to Map (internal format) instead of calling `saveSession` with wrong format
+  - This fixes issues where `mcpUrl`/`serviceUrl` was not being saved correctly
+- **loadXsuaaEnvFile**: Fixed to allow empty string for `jwtToken` (can be set later)
+  - Only rejects `undefined` or `null` tokens
+  - Empty string tokens are valid and can be set later via `setConnectionConfig`
+- **testLogger**: Fixed to not output by default in test environment
+  - Now requires explicit enable via `DEBUG_AUTH_STORES=true` or `DEBUG=true`
+  - No longer enables logging automatically when `NODE_ENV === 'test'`
 
 ## [0.1.6] - 2025-12-08
 
