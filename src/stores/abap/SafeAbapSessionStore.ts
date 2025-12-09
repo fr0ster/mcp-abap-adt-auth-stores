@@ -28,13 +28,16 @@ interface AbapSessionData {
 export class SafeAbapSessionStore implements ISessionStore {
   private sessions: Map<string, AbapSessionData> = new Map();
   private log?: ILogger;
+  private defaultServiceUrl?: string;
 
   /**
    * Create a new SafeAbapSessionStore instance
    * @param log Optional logger for logging operations
+   * @param defaultServiceUrl Optional default service URL to use when serviceUrl is not provided in config
    */
-  constructor(log?: ILogger) {
+  constructor(log?: ILogger, defaultServiceUrl?: string) {
     this.log = log;
+    this.defaultServiceUrl = defaultServiceUrl;
   }
 
   private loadRawSession(destination: string): AbapSessionData | null {
@@ -133,22 +136,24 @@ export class SafeAbapSessionStore implements ISessionStore {
     
     if (!current) {
       // Session doesn't exist - create new one
-      // For ABAP, serviceUrl is required
-      if (!config.serviceUrl) {
-        throw new Error(`Cannot create session for destination "${destination}": serviceUrl is required for ABAP sessions`);
+      // For ABAP, serviceUrl is required - use from config, defaultServiceUrl, or throw error
+      const serviceUrl = config.serviceUrl || this.defaultServiceUrl;
+      
+      if (!serviceUrl) {
+        throw new Error(`Cannot create session for destination "${destination}": serviceUrl is required for ABAP sessions. Provide it in config or constructor.`);
       }
       
-      this.log?.debug(`Creating new session for ${destination} via setConnectionConfig: serviceUrl(${config.serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars)`);
+      this.log?.debug(`Creating new session for ${destination} via setConnectionConfig: serviceUrl(${serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars)`);
       
       const newSession: AbapSessionData = {
-        sapUrl: config.serviceUrl,
+        sapUrl: serviceUrl,
         jwtToken: config.authorizationToken || '',
         sapClient: config.sapClient,
         language: config.language,
       };
       // Save directly to Map (internal format)
       this.sessions.set(destination, newSession);
-      this.log?.info(`Session created for ${destination}: serviceUrl(${config.serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars)`);
+      this.log?.info(`Session created for ${destination}: serviceUrl(${serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars)`);
       return;
     }
     
@@ -185,13 +190,13 @@ export class SafeAbapSessionStore implements ISessionStore {
     const current = this.loadRawSession(destination);
     
     if (!current) {
-      // Session doesn't exist - try to get serviceUrl from connection config
+      // Session doesn't exist - try to get serviceUrl from connection config or use defaultServiceUrl
       // For ABAP, we need sapUrl to create session
       const connConfig = await this.getConnectionConfig(destination);
-      const sapUrl = connConfig?.serviceUrl;
+      const sapUrl = connConfig?.serviceUrl || this.defaultServiceUrl;
       
       if (!sapUrl) {
-        throw new Error(`Cannot set authorization config for destination "${destination}": session does not exist and serviceUrl is required for ABAP sessions. Call setConnectionConfig first.`);
+        throw new Error(`Cannot set authorization config for destination "${destination}": session does not exist and serviceUrl is required for ABAP sessions. Call setConnectionConfig first or provide defaultServiceUrl in constructor.`);
       }
       
       this.log?.debug(`Creating new session for ${destination} via setAuthorizationConfig: sapUrl(${sapUrl.substring(0, 40)}...)`);

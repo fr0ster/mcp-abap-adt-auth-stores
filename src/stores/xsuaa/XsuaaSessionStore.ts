@@ -33,15 +33,18 @@ interface XsuaaSessionData {
 export class XsuaaSessionStore implements ISessionStore {
   protected directory: string;
   private log?: ILogger;
+  private defaultServiceUrl?: string;
 
   /**
    * Create a new XsuaaSessionStore instance
    * @param directory Directory where session .env files are located
    * @param log Optional logger for logging operations
+   * @param defaultServiceUrl Optional default service URL to use when serviceUrl is not provided in config
    */
-  constructor(directory: string, log?: ILogger) {
+  constructor(directory: string, log?: ILogger, defaultServiceUrl?: string) {
     this.directory = directory;
     this.log = log;
+    this.defaultServiceUrl = defaultServiceUrl;
     
     // Ensure directory exists - create if it doesn't
     if (!fs.existsSync(directory)) {
@@ -244,15 +247,16 @@ export class XsuaaSessionStore implements ISessionStore {
     
     if (!current) {
       // Session doesn't exist - create new one
-      // For XSUAA, mcpUrl is optional
-      this.log?.debug(`Creating new session for ${destination} via setConnectionConfig: mcpUrl(${config.serviceUrl ? config.serviceUrl.substring(0, 40) + '...' : 'none'}), token(${config.authorizationToken?.length || 0} chars)`);
+      // For XSUAA, mcpUrl is optional - use from config, defaultServiceUrl, or undefined
+      const serviceUrl = config.serviceUrl || this.defaultServiceUrl;
+      this.log?.debug(`Creating new session for ${destination} via setConnectionConfig: mcpUrl(${serviceUrl ? serviceUrl.substring(0, 40) + '...' : 'none'}), token(${config.authorizationToken?.length || 0} chars)`);
       
       const newSession: XsuaaSessionData = {
-        mcpUrl: config.serviceUrl,
+        mcpUrl: serviceUrl,
         jwtToken: config.authorizationToken || '',
       };
       await this.saveSession(destination, newSession);
-      this.log?.info(`Session created for ${destination}: mcpUrl(${config.serviceUrl ? config.serviceUrl.substring(0, 40) + '...' : 'none'}), token(${config.authorizationToken?.length || 0} chars)`);
+      this.log?.info(`Session created for ${destination}: mcpUrl(${serviceUrl ? serviceUrl.substring(0, 40) + '...' : 'none'}), token(${config.authorizationToken?.length || 0} chars)`);
       return;
     }
 
@@ -292,11 +296,12 @@ export class XsuaaSessionStore implements ISessionStore {
     
     if (!current) {
       // Session doesn't exist - create new one
-      // For XSUAA, mcpUrl is optional, so we can create session without it
-      this.log?.debug(`Creating new session for ${destination} via setAuthorizationConfig`);
+      // For XSUAA, mcpUrl is optional - use defaultServiceUrl if available
+      const serviceUrl = this.defaultServiceUrl;
+      this.log?.debug(`Creating new session for ${destination} via setAuthorizationConfig: mcpUrl(${serviceUrl ? serviceUrl.substring(0, 40) + '...' : 'none'})`);
       
       const newSession: XsuaaSessionData = {
-        mcpUrl: undefined, // Will be set when connection config is set
+        mcpUrl: serviceUrl, // Use defaultServiceUrl if available, otherwise undefined
         jwtToken: '', // Will be set when connection config is set
         uaaUrl: config.uaaUrl,
         uaaClientId: config.uaaClientId,
