@@ -43,6 +43,39 @@ describe('SafeAbapSessionStore - Broker Usage', () => {
         store.setConnectionConfig(testDestination, connConfig)
       ).rejects.toThrow('serviceUrl is required for ABAP sessions');
     });
+
+    it('should use defaultServiceUrl from constructor when serviceUrl is not provided', async () => {
+      const defaultServiceUrl = 'https://default.sap.com';
+      const storeWithDefault = new SafeAbapSessionStore(createTestLogger(), defaultServiceUrl);
+      
+      const connConfig: IConnectionConfig = {
+        authorizationToken: 'test-jwt-token',
+        // serviceUrl not provided
+      };
+
+      await storeWithDefault.setConnectionConfig(testDestination, connConfig);
+
+      const loaded = await storeWithDefault.getConnectionConfig(testDestination);
+      expect(loaded).toBeDefined();
+      expect(loaded?.serviceUrl).toBe(defaultServiceUrl);
+      expect(loaded?.authorizationToken).toBe(connConfig.authorizationToken);
+    });
+
+    it('should prefer config.serviceUrl over defaultServiceUrl', async () => {
+      const defaultServiceUrl = 'https://default.sap.com';
+      const configServiceUrl = 'https://config.sap.com';
+      const storeWithDefault = new SafeAbapSessionStore(createTestLogger(), defaultServiceUrl);
+      
+      const connConfig: IConnectionConfig = {
+        serviceUrl: configServiceUrl,
+        authorizationToken: 'test-jwt-token',
+      };
+
+      await storeWithDefault.setConnectionConfig(testDestination, connConfig);
+
+      const loaded = await storeWithDefault.getConnectionConfig(testDestination);
+      expect(loaded?.serviceUrl).toBe(configServiceUrl); // Should use config, not default
+    });
   });
 
   describe('setAuthorizationConfig - new session', () => {
@@ -86,6 +119,34 @@ describe('SafeAbapSessionStore - Broker Usage', () => {
       await expect(
         store.setAuthorizationConfig(testDestination, authConfig)
       ).rejects.toThrow('serviceUrl is required for ABAP sessions');
+    });
+
+    it('should use defaultServiceUrl when calling setAuthorizationConfig without existing session', async () => {
+      const defaultServiceUrl = 'https://default.sap.com';
+      const storeWithDefault = new SafeAbapSessionStore(createTestLogger(), defaultServiceUrl);
+      
+      const authConfig: IAuthorizationConfig = {
+        uaaUrl: 'https://test.uaa.com',
+        uaaClientId: 'test-client-id',
+        uaaClientSecret: 'test-client-secret',
+        refreshToken: 'test-refresh-token',
+      };
+
+      await storeWithDefault.setAuthorizationConfig(testDestination, authConfig);
+
+      // Use loadSession to verify full session was created
+      const fullSession = await storeWithDefault.loadSession(testDestination);
+      expect(fullSession).toBeDefined();
+      expect(fullSession?.serviceUrl).toBe(defaultServiceUrl);
+      expect(fullSession?.uaaUrl).toBe(authConfig.uaaUrl);
+      expect(fullSession?.uaaClientId).toBe(authConfig.uaaClientId);
+      expect(fullSession?.uaaClientSecret).toBe(authConfig.uaaClientSecret);
+      expect(fullSession?.refreshToken).toBe(authConfig.refreshToken);
+
+      // getAuthorizationConfig should work
+      const loadedAuth = await storeWithDefault.getAuthorizationConfig(testDestination);
+      expect(loadedAuth).toBeDefined();
+      expect(loadedAuth?.uaaUrl).toBe(authConfig.uaaUrl);
     });
   });
 

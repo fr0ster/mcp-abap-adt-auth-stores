@@ -33,18 +33,18 @@ interface XsuaaSessionData {
 export class XsuaaSessionStore implements ISessionStore {
   protected directory: string;
   private log?: ILogger;
-  private defaultServiceUrl?: string;
+  private defaultServiceUrl: string;
 
   /**
    * Create a new XsuaaSessionStore instance
    * @param directory Directory where session .env files are located
+   * @param defaultServiceUrl Default service URL (required for XSUAA - cannot be obtained from service key)
    * @param log Optional logger for logging operations
-   * @param defaultServiceUrl Optional default service URL to use when serviceUrl is not provided in config
    */
-  constructor(directory: string, log?: ILogger, defaultServiceUrl?: string) {
+  constructor(directory: string, defaultServiceUrl: string, log?: ILogger) {
     this.directory = directory;
-    this.log = log;
     this.defaultServiceUrl = defaultServiceUrl;
+    this.log = log;
     
     // Ensure directory exists - create if it doesn't
     if (!fs.existsSync(directory)) {
@@ -169,7 +169,11 @@ export class XsuaaSessionStore implements ISessionStore {
     const filePath = path.join(this.directory, fileName);
 
     if (fs.existsSync(filePath)) {
+      this.log?.debug(`Deleting session for destination: ${destination}`);
       fs.unlinkSync(filePath);
+      this.log?.info(`Session deleted for destination: ${destination}`);
+    } else {
+      this.log?.debug(`Session file not found for deletion: ${destination}`);
     }
   }
 
@@ -214,10 +218,12 @@ export class XsuaaSessionStore implements ISessionStore {
     try {
       const raw = await this.loadFromFile(sessionPath);
       if (!raw || !isXsuaaSessionConfig(raw)) {
+        this.log?.debug(`Invalid session format for ${destination}: missing required fields (jwtToken)`);
         return null;
       }
       return raw;
     } catch (error) {
+      this.log?.error(`Error loading session for ${destination}: ${error instanceof Error ? error.message : String(error)}`);
       return null;
     }
   }
@@ -247,20 +253,21 @@ export class XsuaaSessionStore implements ISessionStore {
     
     if (!current) {
       // Session doesn't exist - create new one
-      // For XSUAA, mcpUrl is optional - use from config, defaultServiceUrl, or undefined
+      // For XSUAA, use config.serviceUrl if provided, otherwise use defaultServiceUrl (required)
       const serviceUrl = config.serviceUrl || this.defaultServiceUrl;
-      this.log?.debug(`Creating new session for ${destination} via setConnectionConfig: mcpUrl(${serviceUrl ? serviceUrl.substring(0, 40) + '...' : 'none'}), token(${config.authorizationToken?.length || 0} chars)`);
+      this.log?.debug(`Creating new session for ${destination} via setConnectionConfig: mcpUrl(${serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars)`);
       
       const newSession: XsuaaSessionData = {
         mcpUrl: serviceUrl,
         jwtToken: config.authorizationToken || '',
       };
       await this.saveSession(destination, newSession);
-      this.log?.info(`Session created for ${destination}: mcpUrl(${serviceUrl ? serviceUrl.substring(0, 40) + '...' : 'none'}), token(${config.authorizationToken?.length || 0} chars)`);
+      this.log?.info(`Session created for ${destination}: mcpUrl(${serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars)`);
       return;
     }
 
     // Update connection fields
+    this.log?.debug(`Updating connection config for existing session ${destination}: serviceUrl(${config.serviceUrl ? config.serviceUrl.substring(0, 40) + '...' : 'unchanged'}), token(${config.authorizationToken?.length || 0} chars)`);
     const updated: XsuaaSessionData = {
       ...current,
       mcpUrl: config.serviceUrl !== undefined ? config.serviceUrl : current.mcpUrl,
@@ -268,6 +275,7 @@ export class XsuaaSessionStore implements ISessionStore {
     };
     
     await this.saveSession(destination, updated);
+    this.log?.info(`Connection config updated for ${destination}: serviceUrl(${updated.mcpUrl ? updated.mcpUrl.substring(0, 40) + '...' : 'none'}), token(${config.authorizationToken?.length || 0} chars)`);
   }
 
   async getAuthorizationConfig(destination: string): Promise<IAuthorizationConfig | null> {
@@ -296,12 +304,11 @@ export class XsuaaSessionStore implements ISessionStore {
     
     if (!current) {
       // Session doesn't exist - create new one
-      // For XSUAA, mcpUrl is optional - use defaultServiceUrl if available
-      const serviceUrl = this.defaultServiceUrl;
-      this.log?.debug(`Creating new session for ${destination} via setAuthorizationConfig: mcpUrl(${serviceUrl ? serviceUrl.substring(0, 40) + '...' : 'none'})`);
+      // For XSUAA, use defaultServiceUrl (required - cannot be obtained from service key)
+      this.log?.debug(`Creating new session for ${destination} via setAuthorizationConfig: mcpUrl(${this.defaultServiceUrl.substring(0, 40)}...)`);
       
       const newSession: XsuaaSessionData = {
-        mcpUrl: serviceUrl, // Use defaultServiceUrl if available, otherwise undefined
+        mcpUrl: this.defaultServiceUrl,
         jwtToken: '', // Will be set when connection config is set
         uaaUrl: config.uaaUrl,
         uaaClientId: config.uaaClientId,
@@ -309,10 +316,12 @@ export class XsuaaSessionStore implements ISessionStore {
         refreshToken: config.refreshToken,
       };
       await this.saveSession(destination, newSession);
+      this.log?.info(`New session created for ${destination} via setAuthorizationConfig: uaaUrl(${config.uaaUrl.substring(0, 30)}...), hasRefreshToken(${!!config.refreshToken})`);
       return;
     }
 
     // Update authorization fields
+    this.log?.debug(`Updating authorization config for existing session ${destination}: uaaUrl(${config.uaaUrl.substring(0, 30)}...), hasRefreshToken(${!!config.refreshToken})`);
     const updated: XsuaaSessionData = {
       ...current,
       uaaUrl: config.uaaUrl,
@@ -321,6 +330,7 @@ export class XsuaaSessionStore implements ISessionStore {
       refreshToken: config.refreshToken || current.refreshToken,
     };
     await this.saveSession(destination, updated);
+    this.log?.info(`Authorization config updated for ${destination}: uaaUrl(${config.uaaUrl.substring(0, 30)}...), hasRefreshToken(${!!config.refreshToken})`);
   }
 }
 

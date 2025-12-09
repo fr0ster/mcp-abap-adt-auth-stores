@@ -30,7 +30,7 @@ describe('BtpSessionStore Integration', () => {
         return;
       }
 
-      const store = new BtpSessionStore(sessionsDir);
+      const store = new BtpSessionStore(sessionsDir, xsuaaDestinations.mcp_url || 'https://default.mcp.com');
 
       const session = await store.loadSession(xsuaaDestinations.btp_destination);
       
@@ -49,7 +49,7 @@ describe('BtpSessionStore Integration', () => {
         return;
       }
 
-      const store = new BtpSessionStore(sessionsDir);
+      const store = new BtpSessionStore(sessionsDir, xsuaaDestinations.mcp_url || 'https://default.mcp.com');
 
       // Create test session config
       const testSession: IConfig = {
@@ -94,7 +94,7 @@ describe('BtpSessionStore Integration', () => {
         return;
       }
 
-      const store = new BtpSessionStore(sessionsDir);
+      const store = new BtpSessionStore(sessionsDir, xsuaaDestinations.mcp_url || 'https://default.mcp.com');
 
       const authConfig = await store.getAuthorizationConfig(xsuaaDestinations.btp_destination);
       

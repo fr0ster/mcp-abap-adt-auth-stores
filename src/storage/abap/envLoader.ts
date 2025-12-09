@@ -48,16 +48,17 @@ export async function loadEnvFile(destination: string, directory: string, log?: 
     const sapUrl = parsed[ABAP_CONNECTION_VARS.SERVICE_URL];
     const jwtToken = parsed[ABAP_CONNECTION_VARS.AUTHORIZATION_TOKEN];
 
-    log?.debug(`Extracted fields: hasSapUrl(${!!sapUrl}), hasJwtToken(${!!jwtToken})`);
+    log?.debug(`Extracted fields: hasSapUrl(${!!sapUrl}), hasJwtToken(${jwtToken !== undefined && jwtToken !== null})`);
 
-    if (!sapUrl || !jwtToken) {
-      log?.warn(`Env file missing required fields: sapUrl(${!!sapUrl}), jwtToken(${!!jwtToken})`);
+    // sapUrl is required, jwtToken can be empty string (for authorization-only sessions)
+    if (!sapUrl || jwtToken === undefined || jwtToken === null) {
+      log?.warn(`Env file missing required fields: sapUrl(${!!sapUrl}), jwtToken(${jwtToken !== undefined && jwtToken !== null})`);
       return null;
     }
 
     const config: EnvConfig = {
       sapUrl: sapUrl.trim(),
-      jwtToken: jwtToken.trim(),
+      jwtToken: jwtToken.trim(), // Can be empty string for authorization-only sessions
     };
 
     // Optional fields

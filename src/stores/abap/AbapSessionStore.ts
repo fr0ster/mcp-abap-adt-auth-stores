@@ -78,7 +78,7 @@ export class AbapSessionStore implements ISessionStore {
     // Convert IConfig format (serviceUrl, authorizationToken) to internal format (sapUrl, jwtToken)
     return {
       sapUrl: (obj.serviceUrl || obj.sapUrl) as string,
-      jwtToken: (obj.authorizationToken || obj.jwtToken) as string,
+      jwtToken: (obj.authorizationToken || obj.jwtToken || '') as string, // Ensure jwtToken is always a string
       refreshToken: obj.refreshToken as string | undefined,
       uaaUrl: obj.uaaUrl as string | undefined,
       uaaClientId: obj.uaaClientId as string | undefined,
@@ -96,6 +96,7 @@ export class AbapSessionStore implements ISessionStore {
   private async saveToFile(filePath: string, config: Record<string, unknown>): Promise<void> {
     // Type guard - ensure it's EnvConfig (has sapUrl)
     if (!config || typeof config !== 'object' || !('sapUrl' in config)) {
+      this.log?.error(`Invalid config format for AbapSessionStore: missing sapUrl`);
       throw new Error('AbapSessionStore can only store ABAP sessions (with sapUrl)');
     }
 
@@ -152,7 +153,11 @@ export class AbapSessionStore implements ISessionStore {
     const filePath = path.join(this.directory, fileName);
 
     if (fs.existsSync(filePath)) {
+      this.log?.debug(`Deleting session for destination: ${destination}`);
       fs.unlinkSync(filePath);
+      this.log?.info(`Session deleted for destination: ${destination}`);
+    } else {
+      this.log?.debug(`Session file not found for deletion: ${destination}`);
     }
   }
 
@@ -164,22 +169,48 @@ export class AbapSessionStore implements ISessionStore {
    */
   async loadSession(destination: string): Promise<IConfig | null> {
     this.log?.debug(`Loading session for destination: ${destination}`);
-    const authConfig = await this.getAuthorizationConfig(destination);
-    const connConfig = await this.getConnectionConfig(destination);
+    const rawSession = await this.loadRawSession(destination);
     
-    // Return null if both are null, otherwise return composition (even if one is null)
-    if (!authConfig && !connConfig) {
+    if (!rawSession) {
       this.log?.debug(`Session not found for destination: ${destination}`);
       return null;
     }
     
-    const tokenLength = connConfig?.authorizationToken?.length || 0;
-    const hasRefreshToken = !!authConfig?.refreshToken;
-    this.log?.info(`Session loaded for ${destination}: token(${tokenLength} chars), hasRefreshToken(${hasRefreshToken}), sapUrl(${connConfig?.serviceUrl ? connConfig.serviceUrl.substring(0, 40) + '...' : 'none'})`);
-    return {
-      ...(authConfig || {}),
-      ...(connConfig || {}),
-    };
+    // Convert internal format to IConfig format
+    const result: IConfig = {};
+    
+    // Connection config fields
+    if (rawSession.sapUrl) {
+      result.serviceUrl = rawSession.sapUrl;
+    }
+    if (rawSession.jwtToken !== undefined) {
+      result.authorizationToken = rawSession.jwtToken;
+    }
+    if (rawSession.sapClient) {
+      result.sapClient = rawSession.sapClient;
+    }
+    if (rawSession.language) {
+      result.language = rawSession.language;
+    }
+    
+    // Authorization config fields
+    if (rawSession.uaaUrl) {
+      result.uaaUrl = rawSession.uaaUrl;
+    }
+    if (rawSession.uaaClientId) {
+      result.uaaClientId = rawSession.uaaClientId;
+    }
+    if (rawSession.uaaClientSecret) {
+      result.uaaClientSecret = rawSession.uaaClientSecret;
+    }
+    if (rawSession.refreshToken) {
+      result.refreshToken = rawSession.refreshToken;
+    }
+    
+    const tokenLength = rawSession.jwtToken?.length || 0;
+    const hasRefreshToken = !!rawSession.refreshToken;
+    this.log?.info(`Session loaded for ${destination}: token(${tokenLength} chars), hasRefreshToken(${hasRefreshToken}), sapUrl(${rawSession.sapUrl ? rawSession.sapUrl.substring(0, 40) + '...' : 'none'})`);
+    return result;
   }
 
   /**
@@ -197,10 +228,12 @@ export class AbapSessionStore implements ISessionStore {
     try {
       const raw = await this.loadFromFile(sessionPath);
       if (!raw || !isEnvConfig(raw)) {
+        this.log?.debug(`Invalid session format for ${destination}: missing required fields (sapUrl, jwtToken)`);
         return null;
       }
       return raw;
     } catch (error) {
+      this.log?.error(`Error loading session for ${destination}: ${error instanceof Error ? error.message : String(error)}`);
       return null;
     }
   }
@@ -276,32 +309,39 @@ export class AbapSessionStore implements ISessionStore {
       const sapUrl = connConfig?.serviceUrl || this.defaultServiceUrl;
       
       if (!sapUrl) {
+        this.log?.error(`Cannot set authorization config for ${destination}: session does not exist and serviceUrl is required. Missing defaultServiceUrl in constructor.`);
         throw new Error(`Cannot set authorization config for destination "${destination}": session does not exist and serviceUrl is required for ABAP sessions. Call setConnectionConfig first or provide defaultServiceUrl in constructor.`);
       }
       
       this.log?.debug(`Creating new session for ${destination} via setAuthorizationConfig: sapUrl(${sapUrl.substring(0, 40)}...)`);
       
-      const newSession: AbapSessionData = {
-        sapUrl,
-        jwtToken: connConfig?.authorizationToken || '', // Use token from connection config if available
+      const newSession: IConfig = {
+        serviceUrl: sapUrl,
+        authorizationToken: connConfig?.authorizationToken || '', // Use token from connection config if available
         uaaUrl: config.uaaUrl,
         uaaClientId: config.uaaClientId,
         uaaClientSecret: config.uaaClientSecret,
         refreshToken: config.refreshToken,
       };
       await this.saveSession(destination, newSession);
+      this.log?.info(`New session created for ${destination} via setAuthorizationConfig: uaaUrl(${config.uaaUrl.substring(0, 30)}...), hasRefreshToken(${!!config.refreshToken})`);
       return;
     }
 
-    // Update authorization fields
-    const updated: AbapSessionData = {
-      ...current,
+    // Update authorization fields - convert internal format to IConfig
+    this.log?.debug(`Updating authorization config for existing session ${destination}: uaaUrl(${config.uaaUrl.substring(0, 30)}...), hasRefreshToken(${!!config.refreshToken})`);
+    const updated: IConfig = {
+      serviceUrl: current.sapUrl,
+      authorizationToken: current.jwtToken,
+      sapClient: current.sapClient,
+      language: current.language,
       uaaUrl: config.uaaUrl,
       uaaClientId: config.uaaClientId,
       uaaClientSecret: config.uaaClientSecret,
       refreshToken: config.refreshToken || current.refreshToken,
     };
     await this.saveSession(destination, updated);
+    this.log?.info(`Authorization config updated for ${destination}: uaaUrl(${config.uaaUrl.substring(0, 30)}...), hasRefreshToken(${!!config.refreshToken})`);
   }
 
   /**
@@ -320,14 +360,15 @@ export class AbapSessionStore implements ISessionStore {
       const serviceUrl = config.serviceUrl || this.defaultServiceUrl;
       
       if (!serviceUrl) {
+        this.log?.error(`Cannot create session for ${destination}: serviceUrl is required. Missing in config and defaultServiceUrl in constructor.`);
         throw new Error(`Cannot create session for destination "${destination}": serviceUrl is required for ABAP sessions. Provide it in config or constructor.`);
       }
       
       this.log?.debug(`Creating new session for ${destination} via setConnectionConfig: serviceUrl(${serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars)`);
       
-      const newSession: AbapSessionData = {
-        sapUrl: serviceUrl,
-        jwtToken: config.authorizationToken || '',
+      const newSession: IConfig = {
+        serviceUrl: serviceUrl,
+        authorizationToken: config.authorizationToken || '',
         sapClient: config.sapClient,
         language: config.language,
       };
@@ -336,16 +377,22 @@ export class AbapSessionStore implements ISessionStore {
       return;
     }
 
-    // Update connection fields
-    const updated: AbapSessionData = {
-      ...current,
-      sapUrl: config.serviceUrl || current.sapUrl,
-      jwtToken: config.authorizationToken,
+    // Update connection fields - convert internal format to IConfig
+    this.log?.debug(`Updating connection config for existing session ${destination}: serviceUrl(${config.serviceUrl ? config.serviceUrl.substring(0, 40) + '...' : 'unchanged'}), token(${config.authorizationToken?.length || 0} chars)`);
+    const updated: IConfig = {
+      serviceUrl: config.serviceUrl || current.sapUrl,
+      authorizationToken: config.authorizationToken,
       sapClient: config.sapClient !== undefined ? config.sapClient : current.sapClient,
       language: config.language !== undefined ? config.language : current.language,
+      uaaUrl: current.uaaUrl,
+      uaaClientId: current.uaaClientId,
+      uaaClientSecret: current.uaaClientSecret,
+      refreshToken: current.refreshToken,
     };
     
     await this.saveSession(destination, updated);
+    const finalServiceUrl = updated.serviceUrl || current.sapUrl;
+    this.log?.info(`Connection config updated for ${destination}: serviceUrl(${finalServiceUrl ? finalServiceUrl.substring(0, 40) + '...' : 'none'}), token(${config.authorizationToken?.length || 0} chars)`);
   }
 }
 

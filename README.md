@@ -12,7 +12,7 @@ npm install @mcp-abap-adt/auth-stores
 
 ## Overview
 
-This package implements the `IServiceKeyStore` and `ISessionStore` interfaces from `@mcp-abap-adt/auth-broker`:
+This package implements the `IServiceKeyStore` and `ISessionStore` interfaces from `@mcp-abap-adt/interfaces`:
 
 - **Service Key Stores**: Read service key JSON files from a specified directory
 - **Session Stores**: Read/write session data from/to `.env` files or in-memory storage
@@ -40,7 +40,7 @@ This principle ensures:
 
 This package is responsible for:
 
-1. **Implementing storage interfaces**: Provides concrete implementations of `IServiceKeyStore` and `ISessionStore` interfaces defined in `@mcp-abap-adt/auth-broker`
+1. **Implementing storage interfaces**: Provides concrete implementations of `IServiceKeyStore` and `ISessionStore` interfaces defined in `@mcp-abap-adt/interfaces`
 2. **File I/O operations**: Handles reading and writing service key JSON files and session `.env` files
 3. **Data format conversion**: Converts between interface types (`IConfig`, `IConnectionConfig`, `IAuthorizationConfig`) and internal storage formats
 4. **Platform-specific handling**: Provides different store implementations for ABAP, BTP, and XSUAA with their specific data formats
@@ -63,7 +63,7 @@ This package is responsible for:
 
 This package interacts with external packages **ONLY through interfaces**:
 
-- **`@mcp-abap-adt/auth-broker`**: Uses interfaces (`IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `IAuthorizationConfig`) - does not know about `AuthBroker` implementation
+- **`@mcp-abap-adt/interfaces`**: Uses interfaces (`IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `IAuthorizationConfig`, `ILogger`) - does not know about concrete implementations in other packages
 - **No direct dependencies on other packages**: All interactions happen through well-defined interfaces
 
 ## Store Types
@@ -101,10 +101,12 @@ import { BtpServiceKeyStore, BtpSessionStore, SafeBtpSessionStore } from '@mcp-a
 const serviceKeyStore = new BtpServiceKeyStore('/path/to/service-keys');
 
 // File-based session store - reads/writes {destination}.env files
-const sessionStore = new BtpSessionStore('/path/to/sessions');
+// defaultServiceUrl is REQUIRED (cannot be obtained from service key)
+const sessionStore = new BtpSessionStore('/path/to/sessions', 'https://default.mcp.com', logger);
 
 // In-memory session store (non-persistent)
-const safeSessionStore = new SafeBtpSessionStore();
+// defaultServiceUrl is REQUIRED (cannot be obtained from service key)
+const safeSessionStore = new SafeBtpSessionStore('https://default.mcp.com', logger);
 ```
 
 ### ABAP Stores (with sapUrl)
@@ -131,10 +133,12 @@ import { XsuaaServiceKeyStore, XsuaaSessionStore, SafeXsuaaSessionStore } from '
 const serviceKeyStore = new XsuaaServiceKeyStore('/path/to/service-keys');
 
 // File-based session store - stores XSUAA sessions
-const sessionStore = new XsuaaSessionStore('/path/to/sessions');
+// defaultServiceUrl is REQUIRED (cannot be obtained from service key)
+const sessionStore = new XsuaaSessionStore('/path/to/sessions', 'https://default.mcp.com', logger);
 
 // In-memory session store
-const safeSessionStore = new SafeXsuaaSessionStore();
+// defaultServiceUrl is REQUIRED (cannot be obtained from service key)
+const safeSessionStore = new SafeXsuaaSessionStore('https://default.mcp.com', logger);
 ```
 
 ### Directory Configuration
@@ -150,6 +154,20 @@ const sessionStore = new AbapSessionStore('/path/to/sessions'); // Directory cre
 ```
 
 **Note**: File-based session stores (`AbapSessionStore`, `BtpSessionStore`, `XsuaaSessionStore`) automatically create the directory in the constructor if it doesn't exist. Stores are ready to use immediately after construction.
+
+### Default Service URL Configuration
+
+**For XSUAA and BTP stores**: `defaultServiceUrl` is **required** in the constructor because `serviceUrl` cannot be obtained from service keys:
+- `XsuaaSessionStore(directory, defaultServiceUrl, log?)` - `defaultServiceUrl` is required
+- `SafeXsuaaSessionStore(defaultServiceUrl, log?)` - `defaultServiceUrl` is required
+- `BtpSessionStore(directory, defaultServiceUrl, log?)` - `defaultServiceUrl` is required
+- `SafeBtpSessionStore(defaultServiceUrl, log?)` - `defaultServiceUrl` is required
+
+**For ABAP stores**: `defaultServiceUrl` is **optional** because `serviceUrl` can be obtained from ABAP service keys:
+- `AbapSessionStore(directory, log?, defaultServiceUrl?)` - `defaultServiceUrl` is optional
+- `SafeAbapSessionStore(log?, defaultServiceUrl?)` - `defaultServiceUrl` is optional
+
+The `defaultServiceUrl` is used when creating new sessions via `setConnectionConfig` or `setAuthorizationConfig` if `config.serviceUrl` is not provided. It is never used to modify existing sessions.
 
 ### Service Key Format
 
@@ -354,7 +372,7 @@ Integration tests will skip if `test-config.yaml` is not configured or contains 
 
 ### Store Implementation
 
-- All stores implement `IServiceKeyStore` or `ISessionStore` interfaces from `@mcp-abap-adt/auth-broker`
+- All stores implement `IServiceKeyStore` or `ISessionStore` interfaces from `@mcp-abap-adt/interfaces`
 - Stores accept a single directory path in constructor
 - File-based session stores automatically create directories in constructor if they don't exist
 - Session stores automatically create sessions when calling `setConnectionConfig` or `setAuthorizationConfig` (no need to call `saveSession` first)
@@ -366,13 +384,14 @@ Session stores are designed to work seamlessly with `AuthBroker`:
 
 - **Ready after construction**: File-based stores create directory automatically, stores are ready to use immediately
 - **Automatic session creation**: Calling `setConnectionConfig` or `setAuthorizationConfig` on an empty store creates a new session
-- **ABAP stores**: Require `serviceUrl` when creating new session via `setConnectionConfig` or `setAuthorizationConfig`
-- **BTP/XSUAA stores**: `mcpUrl` is optional - can create session with authorization config first, then add connection config
+- **ABAP stores**: Require `serviceUrl` when creating new session (from config or `defaultServiceUrl` parameter)
+- **BTP/XSUAA stores**: Require `defaultServiceUrl` in constructor (cannot be obtained from service key), used when creating new sessions if `config.serviceUrl` is not provided
 - **Token updates**: `setConnectionConfig` updates token if provided, preserves existing token if not provided
+- **Session updates**: When updating existing sessions, only `config.serviceUrl` is used if explicitly provided; `defaultServiceUrl` is never used to modify existing sessions
 
 ## Dependencies
 
-- `@mcp-abap-adt/interfaces` (^0.1.3) - Interface definitions (`IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `IAuthorizationConfig`, `ILogger`)
+- `@mcp-abap-adt/interfaces` (^0.1.4) - Interface definitions (`IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `IAuthorizationConfig`, `ILogger`)
 - `dotenv` - Environment variable parsing
 
 ## License

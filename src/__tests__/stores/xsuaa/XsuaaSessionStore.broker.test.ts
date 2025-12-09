@@ -17,7 +17,7 @@ describe('XsuaaSessionStore - Broker Usage', () => {
 
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'xsuaa-session-test-'));
-    store = new XsuaaSessionStore(tempDir, createTestLogger());
+    store = new XsuaaSessionStore(tempDir, 'https://default.mcp.com', createTestLogger());
   });
 
   afterEach(async () => {
@@ -39,9 +39,10 @@ describe('XsuaaSessionStore - Broker Usage', () => {
       expect(loaded?.authorizationToken).toBe(connConfig.authorizationToken);
     });
 
-    it('should create new session even without serviceUrl (mcpUrl is optional)', async () => {
+    it('should use defaultServiceUrl when serviceUrl is not provided in config', async () => {
       const connConfig: IConnectionConfig = {
         authorizationToken: 'test-jwt-token',
+        // serviceUrl not provided
       };
 
       await store.setConnectionConfig(testDestination, connConfig);
@@ -49,7 +50,40 @@ describe('XsuaaSessionStore - Broker Usage', () => {
       const loaded = await store.getConnectionConfig(testDestination);
       expect(loaded).toBeDefined();
       expect(loaded?.authorizationToken).toBe(connConfig.authorizationToken);
-      expect(loaded?.serviceUrl).toBeUndefined();
+      expect(loaded?.serviceUrl).toBe('https://default.mcp.com'); // Should use defaultServiceUrl
+    });
+
+    it('should use defaultServiceUrl from constructor when serviceUrl is not provided', async () => {
+      const defaultServiceUrl = 'https://custom-default.mcp.com';
+      const storeWithDefault = new XsuaaSessionStore(tempDir, defaultServiceUrl, createTestLogger());
+      
+      const connConfig: IConnectionConfig = {
+        authorizationToken: 'test-jwt-token',
+        // serviceUrl not provided
+      };
+
+      await storeWithDefault.setConnectionConfig(testDestination, connConfig);
+
+      const loaded = await storeWithDefault.getConnectionConfig(testDestination);
+      expect(loaded).toBeDefined();
+      expect(loaded?.serviceUrl).toBe(defaultServiceUrl);
+      expect(loaded?.authorizationToken).toBe(connConfig.authorizationToken);
+    });
+
+    it('should prefer config.serviceUrl over defaultServiceUrl', async () => {
+      const defaultServiceUrl = 'https://default.mcp.com';
+      const configServiceUrl = 'https://config.mcp.com';
+      const storeWithDefault = new XsuaaSessionStore(tempDir, defaultServiceUrl, createTestLogger());
+      
+      const connConfig: IConnectionConfig = {
+        serviceUrl: configServiceUrl,
+        authorizationToken: 'test-jwt-token',
+      };
+
+      await storeWithDefault.setConnectionConfig(testDestination, connConfig);
+
+      const loaded = await storeWithDefault.getConnectionConfig(testDestination);
+      expect(loaded?.serviceUrl).toBe(configServiceUrl); // Should use config, not default
     });
   });
 
@@ -70,6 +104,27 @@ describe('XsuaaSessionStore - Broker Usage', () => {
       expect(loadedAuth?.uaaClientId).toBe(authConfig.uaaClientId);
       expect(loadedAuth?.uaaClientSecret).toBe(authConfig.uaaClientSecret);
       expect(loadedAuth?.refreshToken).toBe(authConfig.refreshToken);
+    });
+
+    it('should use defaultServiceUrl when calling setAuthorizationConfig without existing session', async () => {
+      const defaultServiceUrl = 'https://default.mcp.com';
+      const storeWithDefault = new XsuaaSessionStore(tempDir, defaultServiceUrl, createTestLogger());
+      
+      const authConfig: IAuthorizationConfig = {
+        uaaUrl: 'https://test.uaa.com',
+        uaaClientId: 'test-client-id',
+        uaaClientSecret: 'test-client-secret',
+        refreshToken: 'test-refresh-token',
+      };
+
+      await storeWithDefault.setAuthorizationConfig(testDestination, authConfig);
+
+      const loadedAuth = await storeWithDefault.getAuthorizationConfig(testDestination);
+      expect(loadedAuth).toBeDefined();
+      expect(loadedAuth?.uaaUrl).toBe(authConfig.uaaUrl);
+
+      const loadedConn = await storeWithDefault.getConnectionConfig(testDestination);
+      expect(loadedConn?.serviceUrl).toBe(defaultServiceUrl);
     });
 
     it('should create new session when calling setAuthorizationConfig after setConnectionConfig', async () => {

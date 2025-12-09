@@ -7,6 +7,106 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2025-12-08
+
+### Breaking Changes
+
+- **XsuaaSessionStore Constructor**: `defaultServiceUrl` is now a **required** parameter (second parameter)
+  - **Before**: `new XsuaaSessionStore(directory, log?, defaultServiceUrl?)`
+  - **After**: `new XsuaaSessionStore(directory, defaultServiceUrl, log?)`
+  - **Reason**: `serviceUrl` cannot be obtained from XSUAA service keys, so it must be provided via constructor
+  - **Migration**: Update all `XsuaaSessionStore` instantiations to provide `defaultServiceUrl` as second parameter
+
+- **SafeXsuaaSessionStore Constructor**: `defaultServiceUrl` is now a **required** parameter (first parameter)
+  - **Before**: `new SafeXsuaaSessionStore(log?, defaultServiceUrl?)`
+  - **After**: `new SafeXsuaaSessionStore(defaultServiceUrl, log?)`
+  - **Migration**: Update all `SafeXsuaaSessionStore` instantiations to provide `defaultServiceUrl` as first parameter
+
+- **BtpSessionStore Constructor**: `defaultServiceUrl` is now a **required** parameter (second parameter)
+  - **Before**: `new BtpSessionStore(directory, log?, defaultServiceUrl?)`
+  - **After**: `new BtpSessionStore(directory, defaultServiceUrl, log?)`
+  - **Reason**: `serviceUrl` cannot be obtained from BTP service keys, so it must be provided via constructor
+  - **Migration**: Update all `BtpSessionStore` instantiations to provide `defaultServiceUrl` as second parameter
+
+- **SafeBtpSessionStore Constructor**: `defaultServiceUrl` is now a **required** parameter (first parameter)
+  - **Before**: `new SafeBtpSessionStore(log?, defaultServiceUrl?)`
+  - **After**: `new SafeBtpSessionStore(defaultServiceUrl, log?)`
+  - **Migration**: Update all `SafeBtpSessionStore` instantiations to provide `defaultServiceUrl` as first parameter
+
+### Changed
+
+- **AbapSessionStore Constructor**: `defaultServiceUrl` remains **optional** (third parameter)
+  - **Reason**: `serviceUrl` can be obtained from ABAP service keys, so it's optional
+  - **Signature**: `new AbapSessionStore(directory, log?, defaultServiceUrl?)`
+  - No migration needed for `AbapSessionStore`
+
+- **SafeAbapSessionStore Constructor**: `defaultServiceUrl` remains **optional** (second parameter)
+  - **Signature**: `new SafeAbapSessionStore(log?, defaultServiceUrl?)`
+  - No migration needed for `SafeAbapSessionStore`
+
+- **Session Creation Logic**: Updated to use `defaultServiceUrl` when creating new sessions
+  - When `setConnectionConfig` or `setAuthorizationConfig` creates a new session, `defaultServiceUrl` is used if `config.serviceUrl` is not provided
+  - For XSUAA/BTP stores: `defaultServiceUrl` is always used (required parameter)
+  - For ABAP stores: `defaultServiceUrl` is used only if provided and `config.serviceUrl` is not provided
+
+- **Session Update Logic**: Fixed to not use `defaultServiceUrl` when updating existing sessions
+  - When updating an existing session, only `config.serviceUrl` is used if explicitly provided
+  - `defaultServiceUrl` is never used to modify `mcpUrl`/`serviceUrl` during updates
+
+### Added
+
+- **Comprehensive Logging**: Added detailed logging throughout all session stores using `ILogger` with optional chaining
+  - All critical operations now log via `logger?.info()`, `logger?.debug()`, `logger?.warn()`, `logger?.error()`
+  - Logging covers: session creation, updates, deletions, loading, validation errors, file operations
+  - Logging provides critical information for analysis: serviceUrl, token lengths, UAA parameters, operation results
+  - Logging is optional - stores work without logger (no-op when logger is not provided)
+
+### Fixed
+
+- **loadEnvFile**: Fixed validation to allow empty string for `jwtToken`
+  - **Before**: Rejected empty string `''` as invalid (treated as falsy)
+  - **After**: Only rejects `undefined` or `null` - empty string is valid
+  - **Reason**: Sessions created via `setAuthorizationConfig` may have empty `jwtToken` initially (set later via `setConnectionConfig`)
+  - This fix allows loading sessions with empty tokens, which is valid for authorization-only sessions
+
+### Migration Guide
+
+#### XsuaaSessionStore and SafeXsuaaSessionStore
+
+**Before:**
+```typescript
+const store = new XsuaaSessionStore('/path/to/sessions', logger, 'https://default.mcp.com');
+const safeStore = new SafeXsuaaSessionStore(logger, 'https://default.mcp.com');
+```
+
+**After:**
+```typescript
+const store = new XsuaaSessionStore('/path/to/sessions', 'https://default.mcp.com', logger);
+const safeStore = new SafeXsuaaSessionStore('https://default.mcp.com', logger);
+```
+
+#### BtpSessionStore and SafeBtpSessionStore
+
+**Before:**
+```typescript
+const store = new BtpSessionStore('/path/to/sessions', logger, 'https://default.mcp.com');
+const safeStore = new SafeBtpSessionStore(logger, 'https://default.mcp.com');
+```
+
+**After:**
+```typescript
+const store = new BtpSessionStore('/path/to/sessions', 'https://default.mcp.com', logger);
+const safeStore = new SafeBtpSessionStore('https://default.mcp.com', logger);
+```
+
+#### AbapSessionStore and SafeAbapSessionStore
+
+No changes needed - `defaultServiceUrl` remains optional:
+```typescript
+const store = new AbapSessionStore('/path/to/sessions', logger, 'https://default.sap.com'); // Optional
+const safeStore = new SafeAbapSessionStore(logger, 'https://default.sap.com'); // Optional
+```
+
 ## [0.1.7] - 2025-12-08
 
 ### Added

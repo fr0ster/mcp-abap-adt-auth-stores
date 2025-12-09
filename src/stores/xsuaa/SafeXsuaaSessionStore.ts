@@ -26,16 +26,16 @@ interface XsuaaSessionData {
 export class SafeXsuaaSessionStore implements ISessionStore {
   private sessions: Map<string, XsuaaSessionData> = new Map();
   private log?: ILogger;
-  private defaultServiceUrl?: string;
+  private defaultServiceUrl: string;
 
   /**
    * Create a new SafeXsuaaSessionStore instance
+   * @param defaultServiceUrl Default service URL (required for XSUAA - cannot be obtained from service key)
    * @param log Optional logger for logging operations
-   * @param defaultServiceUrl Optional default service URL to use when serviceUrl is not provided in config
    */
-  constructor(log?: ILogger, defaultServiceUrl?: string) {
-    this.log = log;
+  constructor(defaultServiceUrl: string, log?: ILogger) {
     this.defaultServiceUrl = defaultServiceUrl;
+    this.log = log;
   }
 
   private loadRawSession(destination: string): XsuaaSessionData | null {
@@ -116,7 +116,13 @@ export class SafeXsuaaSessionStore implements ISessionStore {
   }
 
   async deleteSession(destination: string): Promise<void> {
-    this.sessions.delete(destination);
+    if (this.sessions.has(destination)) {
+      this.log?.debug(`Deleting session for destination: ${destination}`);
+      this.sessions.delete(destination);
+      this.log?.info(`Session deleted for destination: ${destination}`);
+    } else {
+      this.log?.debug(`Session not found for deletion: ${destination}`);
+    }
   }
 
   async getConnectionConfig(destination: string): Promise<IConnectionConfig | null> {
@@ -141,9 +147,9 @@ export class SafeXsuaaSessionStore implements ISessionStore {
     
     if (!current) {
       // Session doesn't exist - create new one
-      // For XSUAA, mcpUrl is optional - use from config, defaultServiceUrl, or undefined
+      // For XSUAA, use config.serviceUrl if provided, otherwise use defaultServiceUrl (required)
       const serviceUrl = config.serviceUrl || this.defaultServiceUrl;
-      this.log?.debug(`Creating new session for ${destination} via setConnectionConfig: mcpUrl(${serviceUrl ? serviceUrl.substring(0, 40) + '...' : 'none'}), token(${config.authorizationToken?.length || 0} chars)`);
+      this.log?.debug(`Creating new session for ${destination} via setConnectionConfig: mcpUrl(${serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars)`);
       
       const newSession: XsuaaSessionData = {
         mcpUrl: serviceUrl,
@@ -151,10 +157,11 @@ export class SafeXsuaaSessionStore implements ISessionStore {
       };
       // Save directly to Map (internal format)
       this.sessions.set(destination, newSession);
-      this.log?.info(`Session created for ${destination}: mcpUrl(${serviceUrl ? serviceUrl.substring(0, 40) + '...' : 'none'}), token(${config.authorizationToken?.length || 0} chars)`);
+      this.log?.info(`Session created for ${destination}: mcpUrl(${serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars)`);
       return;
     }
     
+    this.log?.debug(`Updating connection config for existing session ${destination}: serviceUrl(${config.serviceUrl ? config.serviceUrl.substring(0, 40) + '...' : 'unchanged'}), token(${config.authorizationToken?.length || 0} chars)`);
     const updated: XsuaaSessionData = {
       ...current,
       mcpUrl: config.serviceUrl !== undefined ? config.serviceUrl : current.mcpUrl,
@@ -162,17 +169,22 @@ export class SafeXsuaaSessionStore implements ISessionStore {
     };
     // Save directly to Map (internal format)
     this.sessions.set(destination, updated);
+    this.log?.info(`Connection config updated for ${destination}: serviceUrl(${updated.mcpUrl ? updated.mcpUrl.substring(0, 40) + '...' : 'none'}), token(${config.authorizationToken?.length || 0} chars)`);
   }
 
   async getAuthorizationConfig(destination: string): Promise<IAuthorizationConfig | null> {
     const sessionConfig = this.loadRawSession(destination);
     if (!sessionConfig) {
+      this.log?.debug(`Authorization config not found for ${destination}`);
       return null;
     }
 
     if (!sessionConfig.uaaUrl || !sessionConfig.uaaClientId || !sessionConfig.uaaClientSecret) {
+      this.log?.warn(`Authorization config for ${destination} missing required UAA fields`);
       return null;
     }
+    
+    this.log?.debug(`Authorization config loaded for ${destination}: uaaUrl(${sessionConfig.uaaUrl.substring(0, 30)}...), hasRefreshToken(${!!sessionConfig.refreshToken})`);
 
     return {
       uaaUrl: sessionConfig.uaaUrl,
@@ -187,12 +199,11 @@ export class SafeXsuaaSessionStore implements ISessionStore {
     
     if (!current) {
       // Session doesn't exist - create new one
-      // For XSUAA, mcpUrl is optional - use defaultServiceUrl if available
-      const serviceUrl = this.defaultServiceUrl;
-      this.log?.debug(`Creating new session for ${destination} via setAuthorizationConfig: mcpUrl(${serviceUrl ? serviceUrl.substring(0, 40) + '...' : 'none'})`);
+      // For XSUAA, use defaultServiceUrl (required - cannot be obtained from service key)
+      this.log?.debug(`Creating new session for ${destination} via setAuthorizationConfig: mcpUrl(${this.defaultServiceUrl.substring(0, 40)}...)`);
       
       const newSession: XsuaaSessionData = {
-        mcpUrl: serviceUrl, // Use defaultServiceUrl if available, otherwise undefined
+        mcpUrl: this.defaultServiceUrl,
         jwtToken: '', // Will be set when connection config is set
         uaaUrl: config.uaaUrl,
         uaaClientId: config.uaaClientId,
@@ -201,9 +212,11 @@ export class SafeXsuaaSessionStore implements ISessionStore {
       };
       // Save directly to Map (internal format)
       this.sessions.set(destination, newSession);
+      this.log?.info(`New session created for ${destination} via setAuthorizationConfig: uaaUrl(${config.uaaUrl.substring(0, 30)}...), hasRefreshToken(${!!config.refreshToken})`);
       return;
     }
 
+    this.log?.debug(`Updating authorization config for existing session ${destination}: uaaUrl(${config.uaaUrl.substring(0, 30)}...), hasRefreshToken(${!!config.refreshToken})`);
     const updated: XsuaaSessionData = {
       ...current,
       uaaUrl: config.uaaUrl,
@@ -213,5 +226,6 @@ export class SafeXsuaaSessionStore implements ISessionStore {
     };
     // Save directly to Map (internal format)
     this.sessions.set(destination, updated);
+    this.log?.info(`Authorization config updated for ${destination}: uaaUrl(${config.uaaUrl.substring(0, 30)}...), hasRefreshToken(${!!config.refreshToken})`);
   }
 }
