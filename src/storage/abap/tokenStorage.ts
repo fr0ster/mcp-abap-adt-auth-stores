@@ -2,10 +2,11 @@
  * Token storage - saves tokens to .env files for ABAP
  */
 
-import type { ILogger } from '@mcp-abap-adt/interfaces';
+
 import * as fs from 'fs';
 import * as path from 'path';
 import { ABAP_AUTHORIZATION_VARS, ABAP_CONNECTION_VARS } from '../../utils/constants';
+import type { ILogger } from '@mcp-abap-adt/interfaces';
 
 // Internal type for ABAP environment configuration (same as in envLoader.ts)
 interface EnvConfig {

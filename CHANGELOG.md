@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2025-12-12
+
+### Changed
+
+- **Import Organization**: Reorganized imports across storage modules for consistency
+  - Moved `ILogger` type import after standard library imports (`fs`, `path`, `dotenv`)
+  - Affected files: `envLoader.ts`, `tokenStorage.ts`, `xsuaaEnvLoader.ts`, `xsuaaTokenStorage.ts`
+
+### Fixed
+
+- **testLogger.ts**: Removed unused `ILogger` import
+
 ## [0.2.0] - 2025-12-08
 
 ### Breaking Changes

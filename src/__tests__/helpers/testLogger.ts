@@ -2,7 +2,7 @@
  * Test logger with environment variable control
  */
 
-import type { ILogger } from '@mcp-abap-adt/interfaces';
+
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 

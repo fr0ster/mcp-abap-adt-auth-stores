@@ -2,10 +2,11 @@
  * XSUAA Token storage - saves tokens to .env files with XSUAA_* variables
  */
 
-import type { ILogger } from '@mcp-abap-adt/interfaces';
+
 import * as fs from 'fs';
 import * as path from 'path';
 import { XSUAA_AUTHORIZATION_VARS, XSUAA_CONNECTION_VARS } from '../../utils/constants';
+import type { ILogger } from '@mcp-abap-adt/interfaces';
 
 // Internal type for XSUAA session storage
 interface XsuaaSessionConfig {

@@ -13,6 +13,7 @@
 
 import type { ILogger } from '@mcp-abap-adt/interfaces';
 
+
 /**
  * Parser for direct XSUAA service key format from BTP
  */

@@ -2,11 +2,12 @@
  * Environment file loader - loads .env files by destination name for ABAP
  */
 
-import type { ILogger } from '@mcp-abap-adt/interfaces';
+
 import * as fs from 'fs';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
 import { ABAP_AUTHORIZATION_VARS, ABAP_CONNECTION_VARS } from '../../utils/constants';
+import type { ILogger } from '@mcp-abap-adt/interfaces';
 
 // Internal type for ABAP environment configuration
 interface EnvConfig {
