@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2025-12-13
+
+### Changed
+- Dependency bump: `@mcp-abap-adt/interfaces` to `^0.1.16` for alignment with latest interfaces docs
+
 ## [0.2.1] - 2025-12-12
 
 ### Changed
