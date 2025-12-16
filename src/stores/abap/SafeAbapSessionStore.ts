@@ -11,7 +11,10 @@ import type { ISessionStore, IConnectionConfig, IAuthorizationConfig, IConfig, I
 interface AbapSessionData {
   sapUrl: string;
   sapClient?: string;
-  jwtToken: string;
+  jwtToken?: string; // Optional for basic auth
+  username?: string; // For basic auth (on-premise)
+  password?: string; // For basic auth (on-premise)
+  authType?: 'basic' | 'jwt'; // Authentication type
   refreshToken?: string;
   uaaUrl?: string;
   uaaClientId?: string;
@@ -70,7 +73,10 @@ export class SafeAbapSessionStore implements ISessionStore {
     // Convert IConfig format (serviceUrl, authorizationToken) to internal format (sapUrl, jwtToken)
     const internal: AbapSessionData = {
       sapUrl: (obj.serviceUrl || obj.sapUrl) as string,
-      jwtToken: (obj.authorizationToken || obj.jwtToken) as string,
+      jwtToken: (obj.authorizationToken || obj.jwtToken) as string | undefined,
+      username: (obj.username as string | undefined),
+      password: (obj.password as string | undefined),
+      authType: (obj.authType as 'basic' | 'jwt' | undefined),
       refreshToken: obj.refreshToken as string | undefined,
       uaaUrl: obj.uaaUrl as string | undefined,
       uaaClientId: obj.uaaClientId as string | undefined,
@@ -156,16 +162,43 @@ export class SafeAbapSessionStore implements ISessionStore {
       return null;
     }
 
-    if (!sessionConfig.jwtToken || !sessionConfig.sapUrl) {
-      this.log?.warn(`Connection config for ${destination} missing required fields: jwtToken(${!!sessionConfig.jwtToken}), sapUrl(${!!sessionConfig.sapUrl})`);
+    if (!sessionConfig.sapUrl) {
+      this.log?.warn(`Connection config for ${destination} missing required field: sapUrl`);
       return null;
     }
-    
-    this.log?.debug(`Connection config loaded for ${destination}: token(${sessionConfig.jwtToken.length} chars), sapUrl(${sessionConfig.sapUrl.substring(0, 40)}...)`);
 
+    // Check for basic auth: if username/password present and no jwtToken, use basic auth
+    const isBasicAuth = sessionConfig.authType === 'basic' || 
+      (!sessionConfig.jwtToken && sessionConfig.username && sessionConfig.password);
+
+    if (isBasicAuth) {
+      if (!sessionConfig.username || !sessionConfig.password) {
+        this.log?.warn(`Connection config for ${destination} missing required fields for basic auth: username(${!!sessionConfig.username}), password(${!!sessionConfig.password})`);
+        return null;
+      }
+
+      this.log?.debug(`Connection config loaded for ${destination} (basic auth): username(${sessionConfig.username}), sapUrl(${sessionConfig.sapUrl.substring(0, 40)}...)`);
+      return {
+        serviceUrl: sessionConfig.sapUrl,
+        username: sessionConfig.username,
+        password: sessionConfig.password,
+        authType: 'basic',
+        sapClient: sessionConfig.sapClient,
+        language: sessionConfig.language,
+      };
+    }
+
+    // JWT auth: check jwtToken
+    if (!sessionConfig.jwtToken) {
+      this.log?.warn(`Connection config for ${destination} missing required field for JWT auth: jwtToken`);
+      return null;
+    }
+
+    this.log?.debug(`Connection config loaded for ${destination} (JWT auth): token(${sessionConfig.jwtToken.length} chars), sapUrl(${sessionConfig.sapUrl.substring(0, 40)}...)`);
     return {
       serviceUrl: sessionConfig.sapUrl,
       authorizationToken: sessionConfig.jwtToken,
+      authType: 'jwt',
       sapClient: sessionConfig.sapClient,
       language: sessionConfig.language,
     };
@@ -188,7 +221,10 @@ export class SafeAbapSessionStore implements ISessionStore {
       
       const newSession: AbapSessionData = {
         sapUrl: serviceUrl,
-        jwtToken: config.authorizationToken || '',
+        jwtToken: config.authorizationToken,
+        username: config.username,
+        password: config.password,
+        authType: config.authType,
         sapClient: config.sapClient,
         language: config.language,
       };
@@ -202,7 +238,10 @@ export class SafeAbapSessionStore implements ISessionStore {
     const updated: AbapSessionData = {
       ...current,
       sapUrl: config.serviceUrl || current.sapUrl,
-      jwtToken: config.authorizationToken,
+      jwtToken: config.authorizationToken || current.jwtToken || '',
+      username: config.username !== undefined ? config.username : current.username,
+      password: config.password !== undefined ? config.password : current.password,
+      authType: config.authType !== undefined ? config.authType : current.authType,
       sapClient: config.sapClient !== undefined ? config.sapClient : current.sapClient,
       language: config.language !== undefined ? config.language : current.language,
     };

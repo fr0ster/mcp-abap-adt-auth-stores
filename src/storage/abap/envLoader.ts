@@ -13,7 +13,10 @@ import type { ILogger } from '@mcp-abap-adt/interfaces';
 interface EnvConfig {
   sapUrl: string;
   sapClient?: string;
-  jwtToken: string;
+  jwtToken?: string; // Optional for basic auth
+  username?: string; // For basic auth (on-premise)
+  password?: string; // For basic auth (on-premise)
+  authType?: 'basic' | 'jwt'; // Authentication type
   refreshToken?: string;
   uaaUrl?: string;
   uaaClientId?: string;
@@ -48,19 +51,41 @@ export async function loadEnvFile(destination: string, directory: string, log?: 
     // Extract required fields
     const sapUrl = parsed[ABAP_CONNECTION_VARS.SERVICE_URL];
     const jwtToken = parsed[ABAP_CONNECTION_VARS.AUTHORIZATION_TOKEN];
+    const username = parsed[ABAP_CONNECTION_VARS.USERNAME];
+    const password = parsed[ABAP_CONNECTION_VARS.PASSWORD];
 
-    log?.debug(`Extracted fields: hasSapUrl(${!!sapUrl}), hasJwtToken(${jwtToken !== undefined && jwtToken !== null})`);
+    log?.debug(`Extracted fields: hasSapUrl(${!!sapUrl}), hasJwtToken(${jwtToken !== undefined && jwtToken !== null}), hasUsername(${!!username}), hasPassword(${!!password})`);
 
-    // sapUrl is required, jwtToken can be empty string (for authorization-only sessions)
-    if (!sapUrl || jwtToken === undefined || jwtToken === null) {
-      log?.warn(`Env file missing required fields: sapUrl(${!!sapUrl}), jwtToken(${jwtToken !== undefined && jwtToken !== null})`);
+    // sapUrl is always required
+    if (!sapUrl) {
+      log?.warn(`Env file missing required field: sapUrl`);
       return null;
     }
 
+    // Determine auth type: if username/password present and no jwtToken, use basic auth
+    // If jwtToken present, use JWT auth
+    // If neither is present, it's OK - auth can be set later (e.g., via setAuthorizationConfig)
+    const isBasicAuth = !!(username && password) && (!jwtToken || jwtToken.trim() === '');
+    const isJwtAuth = !!(jwtToken && jwtToken.trim() !== '');
+    const hasNoAuth = !isBasicAuth && !isJwtAuth;
+
     const config: EnvConfig = {
       sapUrl: sapUrl.trim(),
-      jwtToken: jwtToken.trim(), // Can be empty string for authorization-only sessions
     };
+
+    // Set authentication fields based on type
+    if (isBasicAuth) {
+      config.username = username.trim();
+      config.password = password.trim();
+      config.authType = 'basic';
+    } else if (isJwtAuth) {
+      config.jwtToken = jwtToken.trim();
+      config.authType = 'jwt';
+    } else {
+      // No auth yet - will be set later (e.g., via setAuthorizationConfig)
+      config.jwtToken = jwtToken || '';
+      config.authType = undefined;
+    }
 
     // Optional fields
     if (parsed[ABAP_CONNECTION_VARS.SAP_CLIENT]) {
@@ -87,7 +112,11 @@ export async function loadEnvFile(destination: string, directory: string, log?: 
       config.language = parsed[ABAP_CONNECTION_VARS.SAP_LANGUAGE].trim();
     }
 
-    log?.info(`Env config loaded from ${envFilePath}: sapUrl(${config.sapUrl.substring(0, 50)}...), token(${config.jwtToken.length} chars), hasRefreshToken(${!!config.refreshToken}), hasUaaUrl(${!!config.uaaUrl})`);
+    const tokenLength = config.jwtToken?.length || 0;
+    const authInfo = config.authType === 'basic' 
+      ? `basic auth (username: ${config.username})` 
+      : `JWT token(${tokenLength} chars)`;
+    log?.info(`Env config loaded from ${envFilePath}: sapUrl(${config.sapUrl.substring(0, 50)}...), ${authInfo}, hasRefreshToken(${!!config.refreshToken}), hasUaaUrl(${!!config.uaaUrl})`);
     return config;
   } catch (error) {
     log?.error(`Failed to load env file from ${envFilePath}: ${error instanceof Error ? error.message : String(error)}`);

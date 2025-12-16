@@ -12,7 +12,10 @@ import type { ILogger } from '@mcp-abap-adt/interfaces';
 interface EnvConfig {
   sapUrl: string;
   sapClient?: string;
-  jwtToken: string;
+  jwtToken?: string; // Optional for basic auth
+  username?: string; // For basic auth (on-premise)
+  password?: string; // For basic auth (on-premise)
+  authType?: 'basic' | 'jwt'; // Authentication type
   refreshToken?: string;
   uaaUrl?: string;
   uaaClientId?: string;
@@ -30,13 +33,15 @@ interface EnvConfig {
 export async function saveTokenToEnv(
   destination: string,
   savePath: string,
-  config: Partial<EnvConfig> & { sapUrl?: string; jwtToken: string },
+  config: Partial<EnvConfig> & { sapUrl: string; jwtToken?: string },
   log?: ILogger
 ): Promise<void> {
   const envFilePath = path.join(savePath, `${destination}.env`);
   const tempFilePath = `${envFilePath}.tmp`;
   log?.debug(`Saving token to env file: ${envFilePath}`);
-  log?.debug(`Config to save: hasSapUrl(${!!config.sapUrl}), token(${config.jwtToken.length} chars), hasRefreshToken(${!!config.refreshToken}), hasUaaUrl(${!!config.uaaUrl})`);
+  const tokenLength = config.jwtToken?.length || 0;
+  const hasBasicAuth = !!(config.username && config.password);
+  log?.debug(`Config to save: hasSapUrl(${!!config.sapUrl}), token(${tokenLength} chars), hasBasicAuth(${hasBasicAuth}), hasRefreshToken(${!!config.refreshToken}), hasUaaUrl(${!!config.uaaUrl})`);
 
   // Ensure directory exists
   if (!fs.existsSync(savePath)) {
@@ -74,10 +79,25 @@ export async function saveTokenToEnv(
   log?.debug(`Preserved ${existingVars.size} existing variables from env file`);
 
   // Update with new values
-  if (config.sapUrl) {
-    existingVars.set(ABAP_CONNECTION_VARS.SERVICE_URL, config.sapUrl);
+  // sapUrl is required - always save it
+  existingVars.set(ABAP_CONNECTION_VARS.SERVICE_URL, config.sapUrl);
+  
+  // Handle authentication: JWT or basic auth
+  if (config.username && config.password) {
+    // Basic auth - save username/password
+    existingVars.set(ABAP_CONNECTION_VARS.USERNAME, config.username);
+    existingVars.set(ABAP_CONNECTION_VARS.PASSWORD, config.password);
+    // Clear JWT token if basic auth is used
+    if (config.jwtToken) {
+      existingVars.set(ABAP_CONNECTION_VARS.AUTHORIZATION_TOKEN, '');
+    }
+  } else if (config.jwtToken) {
+    // JWT auth - save token
+    existingVars.set(ABAP_CONNECTION_VARS.AUTHORIZATION_TOKEN, config.jwtToken);
+    // Clear username/password if JWT auth is used
+    existingVars.delete(ABAP_CONNECTION_VARS.USERNAME);
+    existingVars.delete(ABAP_CONNECTION_VARS.PASSWORD);
   }
-  existingVars.set(ABAP_CONNECTION_VARS.AUTHORIZATION_TOKEN, config.jwtToken);
 
   if (config.sapClient) {
     existingVars.set(ABAP_CONNECTION_VARS.SAP_CLIENT, config.sapClient);
@@ -122,6 +142,9 @@ export async function saveTokenToEnv(
 
   // Atomic rename
   fs.renameSync(tempFilePath, envFilePath);
-  log?.info(`Token saved to ${envFilePath}: token(${config.jwtToken.length} chars), sapUrl(${config.sapUrl ? config.sapUrl.substring(0, 50) + '...' : 'none'}), variables(${envLines.length})`);
+  const authInfo = hasBasicAuth 
+    ? `basic auth (username: ${config.username})` 
+    : `JWT token(${tokenLength} chars)`;
+  log?.info(`Token saved to ${envFilePath}: ${authInfo}, sapUrl(${config.sapUrl ? config.sapUrl.substring(0, 50) + '...' : 'none'}), variables(${envLines.length})`);
 }
 

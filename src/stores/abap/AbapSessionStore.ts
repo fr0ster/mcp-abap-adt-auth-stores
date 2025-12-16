@@ -16,7 +16,10 @@ import * as path from 'path';
 interface AbapSessionData {
   sapUrl: string;
   sapClient?: string;
-  jwtToken: string;
+  jwtToken?: string; // Optional for basic auth
+  username?: string; // For basic auth (on-premise)
+  password?: string; // For basic auth (on-premise)
+  authType?: 'basic' | 'jwt'; // Authentication type
   refreshToken?: string;
   uaaUrl?: string;
   uaaClientId?: string;
@@ -76,9 +79,8 @@ export class AbapSessionStore implements ISessionStore {
   private convertToInternalFormat(config: IConfig): Record<string, unknown> {
     const obj = config as Record<string, unknown>;
     // Convert IConfig format (serviceUrl, authorizationToken) to internal format (sapUrl, jwtToken)
-    return {
+    const result: Record<string, unknown> = {
       sapUrl: (obj.serviceUrl || obj.sapUrl) as string,
-      jwtToken: (obj.authorizationToken || obj.jwtToken || '') as string, // Ensure jwtToken is always a string
       refreshToken: obj.refreshToken as string | undefined,
       uaaUrl: obj.uaaUrl as string | undefined,
       uaaClientId: obj.uaaClientId as string | undefined,
@@ -86,6 +88,21 @@ export class AbapSessionStore implements ISessionStore {
       sapClient: obj.sapClient as string | undefined,
       language: obj.language as string | undefined,
     };
+
+    // Handle authentication: JWT or basic auth
+    if (obj.username && obj.password) {
+      // Basic auth
+      result.username = obj.username as string;
+      result.password = obj.password as string;
+      result.authType = 'basic';
+      result.jwtToken = obj.authorizationToken || obj.jwtToken || '';
+    } else {
+      // JWT auth
+      result.jwtToken = (obj.authorizationToken || obj.jwtToken || '') as string;
+      result.authType = 'jwt';
+    }
+
+    return result;
   }
 
   /**
@@ -110,6 +127,9 @@ export class AbapSessionStore implements ISessionStore {
     await saveTokenToEnv(destination, savePath, {
       sapUrl: abapConfig.sapUrl,
       jwtToken: abapConfig.jwtToken,
+      username: abapConfig.username,
+      password: abapConfig.password,
+      authType: abapConfig.authType,
       refreshToken: abapConfig.refreshToken,
       uaaUrl: abapConfig.uaaUrl,
       uaaClientId: abapConfig.uaaClientId,
@@ -186,6 +206,16 @@ export class AbapSessionStore implements ISessionStore {
     if (rawSession.jwtToken !== undefined) {
       result.authorizationToken = rawSession.jwtToken;
     }
+    // Basic auth fields (if present)
+    if (rawSession.username) {
+      (result as any).username = rawSession.username;
+    }
+    if (rawSession.password) {
+      (result as any).password = rawSession.password;
+    }
+    if (rawSession.authType) {
+      (result as any).authType = rawSession.authType;
+    }
     if (rawSession.sapClient) {
       result.sapClient = rawSession.sapClient;
     }
@@ -228,7 +258,7 @@ export class AbapSessionStore implements ISessionStore {
     try {
       const raw = await this.loadFromFile(sessionPath);
       if (!raw || !isEnvConfig(raw)) {
-        this.log?.debug(`Invalid session format for ${destination}: missing required fields (sapUrl, jwtToken)`);
+        this.log?.debug(`Invalid session format for ${destination}: missing required field (sapUrl)`);
         return null;
       }
       return raw;
@@ -278,15 +308,43 @@ export class AbapSessionStore implements ISessionStore {
       return null;
     }
 
-    if (!sessionConfig.jwtToken || !sessionConfig.sapUrl) {
-      this.log?.warn(`Connection config for ${destination} missing required fields: jwtToken(${!!sessionConfig.jwtToken}), sapUrl(${!!sessionConfig.sapUrl})`);
+    if (!sessionConfig.sapUrl) {
+      this.log?.warn(`Connection config for ${destination} missing required field: sapUrl`);
       return null;
     }
 
-    this.log?.debug(`Connection config loaded for ${destination}: token(${sessionConfig.jwtToken.length} chars), sapUrl(${sessionConfig.sapUrl.substring(0, 40)}...)`);
+    // Check for basic auth: if username/password present and no jwtToken, use basic auth
+    const isBasicAuth = sessionConfig.authType === 'basic' || 
+      (!sessionConfig.jwtToken && sessionConfig.username && sessionConfig.password);
+
+    if (isBasicAuth) {
+      if (!sessionConfig.username || !sessionConfig.password) {
+        this.log?.warn(`Connection config for ${destination} missing required fields for basic auth: username(${!!sessionConfig.username}), password(${!!sessionConfig.password})`);
+        return null;
+      }
+
+      this.log?.debug(`Connection config loaded for ${destination} (basic auth): username(${sessionConfig.username}), sapUrl(${sessionConfig.sapUrl.substring(0, 40)}...)`);
+      return {
+        serviceUrl: sessionConfig.sapUrl,
+        username: sessionConfig.username,
+        password: sessionConfig.password,
+        authType: 'basic',
+        sapClient: sessionConfig.sapClient,
+        language: sessionConfig.language,
+      };
+    }
+
+    // JWT auth: check jwtToken
+    if (!sessionConfig.jwtToken) {
+      this.log?.warn(`Connection config for ${destination} missing required field for JWT auth: jwtToken`);
+      return null;
+    }
+
+    this.log?.debug(`Connection config loaded for ${destination} (JWT auth): token(${sessionConfig.jwtToken.length} chars), sapUrl(${sessionConfig.sapUrl.substring(0, 40)}...)`);
     return {
       serviceUrl: sessionConfig.sapUrl,
       authorizationToken: sessionConfig.jwtToken,
+      authType: 'jwt',
       sapClient: sessionConfig.sapClient,
       language: sessionConfig.language,
     };
@@ -303,10 +361,27 @@ export class AbapSessionStore implements ISessionStore {
     const current = await this.loadRawSession(destination);
     
     if (!current) {
-      // Session doesn't exist - try to get serviceUrl from connection config or use defaultServiceUrl
+      // Session doesn't exist - try to get serviceUrl from existing session file or use defaultServiceUrl
       // For ABAP, we need sapUrl to create session
-      const connConfig = await this.getConnectionConfig(destination);
-      const sapUrl = connConfig?.serviceUrl || this.defaultServiceUrl;
+      let sapUrl = this.defaultServiceUrl;
+      let existingAuthToken = '';
+      let existingUsername: string | undefined;
+      let existingPassword: string | undefined;
+      let existingAuthType: 'basic' | 'jwt' | undefined;
+      
+      // Try to load existing session file to get serviceUrl and auth info
+      try {
+        const existingSession = await this.loadSession(destination);
+        if (existingSession?.serviceUrl) {
+          sapUrl = existingSession.serviceUrl;
+          existingAuthToken = existingSession.authorizationToken || '';
+          existingUsername = (existingSession as any)?.username;
+          existingPassword = (existingSession as any)?.password;
+          existingAuthType = (existingSession as any)?.authType;
+        }
+      } catch {
+        // Ignore errors when loading session - will use defaultServiceUrl
+      }
       
       if (!sapUrl) {
         this.log?.error(`Cannot set authorization config for ${destination}: session does not exist and serviceUrl is required. Missing defaultServiceUrl in constructor.`);
@@ -317,7 +392,10 @@ export class AbapSessionStore implements ISessionStore {
       
       const newSession: IConfig = {
         serviceUrl: sapUrl,
-        authorizationToken: connConfig?.authorizationToken || '', // Use token from connection config if available
+        authorizationToken: existingAuthToken,
+        username: existingUsername,
+        password: existingPassword,
+        authType: existingAuthType,
         uaaUrl: config.uaaUrl,
         uaaClientId: config.uaaClientId,
         uaaClientSecret: config.uaaClientSecret,
@@ -402,6 +480,7 @@ export class AbapSessionStore implements ISessionStore {
 function isEnvConfig(config: unknown): config is AbapSessionData {
   if (!config || typeof config !== 'object') return false;
   const obj = config as Record<string, unknown>;
-  return 'sapUrl' in obj && 'jwtToken' in obj;
+  // Must have sapUrl (authentication fields are optional - can be set later)
+  return 'sapUrl' in obj;
 }
 

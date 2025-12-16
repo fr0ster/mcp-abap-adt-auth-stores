@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2025-12-16
+
+### Changed
+- Dependency bump: `@mcp-abap-adt/interfaces` to `^0.1.17` for basic auth support
+
+### Added
+- **Basic Authentication Support for On-Premise Systems**: Added support for basic auth (username/password) in addition to JWT tokens
+  - **envLoader.ts**: Now loads `SAP_USERNAME` and `SAP_PASSWORD` from `.env` files
+    - Automatically detects auth type: if username/password present and no JWT token, uses basic auth
+    - If JWT token present, uses JWT auth
+  - **AbapSessionStore.getConnectionConfig()**: Returns basic auth config when username/password are present
+    - Returns `IConnectionConfig` with `username`, `password`, and `authType: 'basic'` for on-premise systems
+    - Returns `IConnectionConfig` with `authorizationToken` and `authType: 'jwt'` for cloud systems
+  - **tokenStorage.ts**: Now saves `SAP_USERNAME` and `SAP_PASSWORD` to `.env` files
+    - Handles both JWT and basic auth configurations
+    - Clears username/password when JWT auth is used, and vice versa
+  - **constants.ts**: Added `USERNAME: 'SAP_USERNAME'` and `PASSWORD: 'SAP_PASSWORD'` to `ABAP_CONNECTION_VARS`
+  - This enables on-premise systems to use `--mcp` parameter with basic auth instead of requiring JWT tokens
+
 ## [0.2.2] - 2025-12-13
 
 ### Changed

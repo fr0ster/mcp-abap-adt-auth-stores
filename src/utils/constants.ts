@@ -52,6 +52,10 @@ export const ABAP_CONNECTION_VARS = {
   SERVICE_URL: 'SAP_URL',
   /** Authorization token (JWT token) */
   AUTHORIZATION_TOKEN: 'SAP_JWT_TOKEN',
+  /** Username for basic authentication (on-premise systems) */
+  USERNAME: 'SAP_USERNAME',
+  /** Password for basic authentication (on-premise systems) */
+  PASSWORD: 'SAP_PASSWORD',
   /** SAP client number (optional) */
   SAP_CLIENT: 'SAP_CLIENT',
   /** Language (optional) */
