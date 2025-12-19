@@ -20,6 +20,15 @@ export { XsuaaSessionStore } from './stores/xsuaa/XsuaaSessionStore';
 export { SafeXsuaaSessionStore } from './stores/xsuaa/SafeXsuaaSessionStore';
 export { XsuaaServiceKeyStore } from './stores/xsuaa/XsuaaServiceKeyStore';
 
+// Error classes
+export { 
+  StoreError, 
+  FileNotFoundError, 
+  ParseError, 
+  InvalidConfigError, 
+  StorageError 
+} from './errors/StoreErrors';
+
 // Utils
 export { resolveSearchPaths, findFileInPaths } from './utils/pathResolver';
 export { JsonFileHandler } from './utils/JsonFileHandler';

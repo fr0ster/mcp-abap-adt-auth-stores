@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5] - 2025-12-19
+
+### Added
+- **Typed Error Classes**: Added typed error classes for better error handling in auth-broker
+  - `StoreError` - Base error class with error code
+  - `FileNotFoundError` - File not found errors (includes filePath)
+  - `ParseError` - JSON/YAML parsing errors (includes filePath and cause)
+  - `InvalidConfigError` - Missing required config fields (includes missingFields array)
+  - `StorageError` - File write/permission errors (includes operation and cause)
+
+### Changed
+- **Service Key Stores**: Now throw typed errors instead of generic Error
+  - `FileNotFoundError` when service key file not found (returns null)
+  - `ParseError` when JSON parsing fails or format is invalid
+  - `InvalidConfigError` when required UAA fields are missing (returns null)
+- **Dependency**: Updated `@mcp-abap-adt/interfaces` to `^0.2.3` for STORE_ERROR_CODES
+
+## [0.2.4] - 2025-12-19
+
+### Changed
+- Updated `@mcp-abap-adt/interfaces` to `^0.2.2` for compatibility with typed error handling in auth-providers
+
 ## [0.2.3] - 2025-12-16
 
 ### Changed

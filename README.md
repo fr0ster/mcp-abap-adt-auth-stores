@@ -198,6 +198,58 @@ The `defaultServiceUrl` is used when creating new sessions via `setConnectionCon
 
 ## File Handlers
 
+This package provides utility classes for safe file operations:
+
+### Error Handling
+
+All service key stores throw typed errors for better error handling:
+
+```typescript
+import { 
+  BtpServiceKeyStore,
+  FileNotFoundError,
+  ParseError,
+  InvalidConfigError 
+} from '@mcp-abap-adt/auth-stores';
+import { STORE_ERROR_CODES } from '@mcp-abap-adt/interfaces';
+
+const serviceKeyStore = new BtpServiceKeyStore('/path/to/keys');
+
+try {
+  const authConfig = await serviceKeyStore.getAuthorizationConfig('TRIAL');
+  console.log('Auth config loaded:', authConfig);
+} catch (error: any) {
+  if (error.code === STORE_ERROR_CODES.FILE_NOT_FOUND) {
+    // File not found - returns null instead of throwing
+    console.error('Service key file not found:', error.filePath);
+  } else if (error.code === STORE_ERROR_CODES.PARSE_ERROR) {
+    // JSON parsing failed or invalid format
+    console.error('Failed to parse service key:', error.filePath);
+    console.error('Cause:', error.cause);
+  } else if (error.code === STORE_ERROR_CODES.INVALID_CONFIG) {
+    // Required UAA fields missing - returns null instead of throwing
+    console.error('Invalid config:', error.missingFields);
+  } else if (error.code === STORE_ERROR_CODES.STORAGE_ERROR) {
+    // File write/permission error
+    console.error('Storage operation failed:', error.operation);
+    console.error('Cause:', error.cause);
+  } else {
+    // Generic error
+    console.error('Unexpected error:', error.message);
+  }
+}
+```
+
+**Error Types:**
+- **`FileNotFoundError`** - Service key file not found (includes `filePath`)
+- **`ParseError`** - JSON parsing failed or invalid format (includes `filePath` and `cause`)
+- **`InvalidConfigError`** - Required configuration fields missing (includes `missingFields` array)
+- **`StorageError`** - File write or permission error (includes `operation` and `cause`)
+
+**Note**: Most errors result in `null` return values rather than exceptions. Only fatal errors (like JSON parsing failures) throw exceptions.
+
+## File Handlers
+
 Utility classes for working with files:
 
 ### JsonFileHandler

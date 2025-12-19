@@ -5,6 +5,7 @@
 import type { IServiceKeyStore, IAuthorizationConfig, IConnectionConfig, IConfig, ILogger } from '@mcp-abap-adt/interfaces';
 import { JsonFileHandler } from '../../utils/JsonFileHandler';
 import { XsuaaServiceKeyParser } from '../../parsers/xsuaa/XsuaaServiceKeyParser';
+import { ParseError } from '../../errors/StoreErrors';
 
 /**
  * XSUAA Service key store implementation
@@ -78,8 +79,10 @@ export class XsuaaServiceKeyStore implements IServiceKeyStore {
       };
     } catch (error) {
       this.log?.error(`Failed to parse service key for ${destination}: ${error instanceof Error ? error.message : String(error)}`);
-      throw new Error(
-        `Failed to parse service key for destination "${destination}": ${error instanceof Error ? error.message : String(error)}`
+      throw new ParseError(
+        `Failed to parse service key for destination "${destination}"`,
+        `${destination}.json`,
+        error instanceof Error ? error : undefined
       );
     }
   }
@@ -122,8 +125,10 @@ export class XsuaaServiceKeyStore implements IServiceKeyStore {
       };
     } catch (error) {
       this.log?.error(`Failed to parse service key for ${destination}: ${error instanceof Error ? error.message : String(error)}`);
-      throw new Error(
-        `Failed to parse service key for destination "${destination}": ${error instanceof Error ? error.message : String(error)}`
+      throw new ParseError(
+        `Failed to parse service key for destination "${destination}"`,
+        `${destination}.json`,
+        error instanceof Error ? error : undefined
       );
     }
   }

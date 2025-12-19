@@ -5,6 +5,7 @@
 import type { IServiceKeyStore, IAuthorizationConfig, IConnectionConfig, IConfig, ILogger } from '@mcp-abap-adt/interfaces';
 import { JsonFileHandler } from '../../utils/JsonFileHandler';
 import { AbapServiceKeyParser } from '../../parsers/abap/AbapServiceKeyParser';
+import { ParseError } from '../../errors/StoreErrors';
 import * as path from 'path';
 
 /**
@@ -89,8 +90,10 @@ export class AbapServiceKeyStore implements IServiceKeyStore {
       return result;
     } catch (error) {
       this.log?.error(`Failed to parse service key from ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
-      throw new Error(
-        `Failed to parse service key for destination "${destination}": ${error instanceof Error ? error.message : String(error)}`
+      throw new ParseError(
+        `Failed to parse service key for destination "${destination}"`,
+        filePath,
+        error instanceof Error ? error : undefined
       );
     }
   }
