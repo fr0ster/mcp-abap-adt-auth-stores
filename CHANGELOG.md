@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.5] - 2025-12-19
 
+### Fixed
+- **Version Correction**: This release corrects the version numbering issue. The typed error classes and service key store updates that were documented in 0.2.4 were released after 0.2.4 was already published. This version properly documents those changes.
+
+## [0.2.4] - 2025-12-19
+
 ### Added
 - **Typed Error Classes**: Added typed error classes for better error handling in auth-broker
   - `StoreError` - Base error class with error code
@@ -23,11 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `ParseError` when JSON parsing fails or format is invalid
   - `InvalidConfigError` when required UAA fields are missing (returns null)
 - **Dependency**: Updated `@mcp-abap-adt/interfaces` to `^0.2.3` for STORE_ERROR_CODES
-
-## [0.2.4] - 2025-12-19
-
-### Changed
-- Updated `@mcp-abap-adt/interfaces` to `^0.2.2` for compatibility with typed error handling in auth-providers
 
 ## [0.2.3] - 2025-12-16
 
