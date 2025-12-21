@@ -2,15 +2,10 @@
  * @mcp-abap-adt/auth-stores
  * Stores for MCP ABAP ADT auth-broker
  * 
- * Provides BTP, ABAP, and XSUAA store implementations
+ * Provides ABAP and XSUAA store implementations
  */
 
-// BTP stores (base BTP without sapUrl)
-export { BtpSessionStore } from './stores/btp/BtpSessionStore';
-export { SafeBtpSessionStore } from './stores/btp/SafeBtpSessionStore';
-export { BtpServiceKeyStore } from './stores/btp/BtpServiceKeyStore';
-
-// ABAP stores (with sapUrl, extends base BTP)
+// ABAP stores (with sapUrl)
 export { AbapSessionStore } from './stores/abap/AbapSessionStore';
 export { SafeAbapSessionStore } from './stores/abap/SafeAbapSessionStore';
 export { AbapServiceKeyStore } from './stores/abap/AbapServiceKeyStore';
@@ -19,6 +14,11 @@ export { AbapServiceKeyStore } from './stores/abap/AbapServiceKeyStore';
 export { XsuaaSessionStore } from './stores/xsuaa/XsuaaSessionStore';
 export { SafeXsuaaSessionStore } from './stores/xsuaa/SafeXsuaaSessionStore';
 export { XsuaaServiceKeyStore } from './stores/xsuaa/XsuaaServiceKeyStore';
+
+// BTP stores - aliases for XSUAA (backward compatibility)
+export { XsuaaSessionStore as BtpSessionStore } from './stores/xsuaa/XsuaaSessionStore';
+export { SafeXsuaaSessionStore as SafeBtpSessionStore } from './stores/xsuaa/SafeXsuaaSessionStore';
+export { XsuaaServiceKeyStore as BtpServiceKeyStore } from './stores/xsuaa/XsuaaServiceKeyStore';
 
 // Env file stores (for --env=path scenarios)
 export { EnvFileSessionStore } from './stores/env/EnvFileSessionStore';

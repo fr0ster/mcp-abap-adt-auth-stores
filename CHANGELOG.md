@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7] - 2025-12-21
+
+### Fixed
+- **EnvFileSessionStore**: Fixed JWT token refresh flow
+  - `getAuthorizationConfig()` now returns `refreshToken` for token refresh
+  - `setAuthorizationConfig()` now persists `refreshToken` in memory for subsequent refresh cycles
+
 ## [0.2.6] - 2025-12-21
 
 ### Added

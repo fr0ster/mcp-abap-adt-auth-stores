@@ -277,6 +277,7 @@ export class EnvFileSessionStore implements ISessionStore {
         uaaUrl: updated.uaaUrl || '',
         uaaClientId: updated.uaaClientId || '',
         uaaClientSecret: updated.uaaClientSecret || '',
+        refreshToken: updated.refreshToken,
       };
     }
 
@@ -287,6 +288,7 @@ export class EnvFileSessionStore implements ISessionStore {
       uaaUrl: data.uaaUrl || '',
       uaaClientId: data.uaaClientId || '',
       uaaClientSecret: data.uaaClientSecret || '',
+      refreshToken: data.refreshToken,
     };
   }
 
@@ -300,6 +302,7 @@ export class EnvFileSessionStore implements ISessionStore {
       uaaUrl: config.uaaUrl,
       uaaClientId: config.uaaClientId,
       uaaClientSecret: config.uaaClientSecret,
+      refreshToken: config.refreshToken || existing.refreshToken,
     };
 
     this.inMemoryUpdates.set(destination, data);
