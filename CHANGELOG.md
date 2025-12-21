@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `getAuthorizationConfig()` now returns `refreshToken` for token refresh
   - `setAuthorizationConfig()` now persists `refreshToken` in memory for subsequent refresh cycles
 
+### Changed
+- **Removed duplicate BTP stores**: Removed `src/stores/btp/` folder (was duplicate of xsuaa)
+  - `BtpSessionStore`, `SafeBtpSessionStore`, `BtpServiceKeyStore` are now aliases to XSUAA equivalents
+  - Existing code using Btp* classes will continue to work (backward compatible)
+
 ## [0.2.6] - 2025-12-21
 
 ### Added
