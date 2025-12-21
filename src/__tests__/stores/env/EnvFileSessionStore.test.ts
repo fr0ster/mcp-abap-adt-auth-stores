@@ -200,7 +200,7 @@ SAP_AUTH_TYPE=basic
   });
 
   describe('In-Memory Updates', () => {
-    it('should store token updates in memory', async () => {
+    it('should store token updates in memory and save to file for JWT', async () => {
       const envPath = createEnvFile(`
 SAP_URL=https://test.sap.com
 SAP_AUTH_TYPE=jwt
@@ -213,20 +213,19 @@ SAP_JWT_TOKEN=original-token
       let token = await store.getToken('default');
       expect(token).toBe('original-token');
 
-      // Update token in memory
+      // Update token - should also write to file
       await store.setToken('default', 'new-refreshed-token');
 
       // Should get updated token
       token = await store.getToken('default');
       expect(token).toBe('new-refreshed-token');
 
-      // Original file should not be modified
+      // File should be updated with new token
       const fileContent = fs.readFileSync(envPath, 'utf8');
-      expect(fileContent).toContain('original-token');
-      expect(fileContent).not.toContain('new-refreshed-token');
+      expect(fileContent).toContain('SAP_JWT_TOKEN=new-refreshed-token');
     });
 
-    it('should store refresh token updates in memory', async () => {
+    it('should store refresh token updates in memory and save to file', async () => {
       const envPath = createEnvFile(`
 SAP_URL=https://test.sap.com
 SAP_AUTH_TYPE=jwt
@@ -240,6 +239,10 @@ SAP_REFRESH_TOKEN=original-refresh
 
       const refreshToken = await store.getRefreshToken('default');
       expect(refreshToken).toBe('new-refresh-token');
+
+      // File should be updated
+      const fileContent = fs.readFileSync(envPath, 'utf8');
+      expect(fileContent).toContain('SAP_REFRESH_TOKEN=new-refresh-token');
     });
 
     it('should merge in-memory updates with file data', async () => {
@@ -262,7 +265,7 @@ SAP_JWT_TOKEN=original-token
       expect(config?.authorizationToken).toBe('new-token');
     });
 
-    it('clear() should reset in-memory updates', async () => {
+    it('clear() should reset in-memory updates but keep file changes', async () => {
       const envPath = createEnvFile(`
 SAP_URL=https://test.sap.com
 SAP_AUTH_TYPE=jwt
@@ -274,9 +277,9 @@ SAP_JWT_TOKEN=original-token
       await store.setToken('default', 'new-token');
       store.clear();
 
-      // Should re-read from file
+      // Should re-read from file (which now has new-token)
       const token = await store.getToken('default');
-      expect(token).toBe('original-token');
+      expect(token).toBe('new-token');
     });
   });
 
@@ -298,7 +301,7 @@ SAP_JWT_TOKEN=test-token
       expect(session?.authorizationToken).toBe('test-token');
     });
 
-    it('saveSession should update in-memory state', async () => {
+    it('saveSession should update in-memory state and save JWT to file', async () => {
       const envPath = createEnvFile(`
 SAP_URL=https://test.sap.com
 SAP_AUTH_TYPE=jwt
@@ -315,6 +318,10 @@ SAP_JWT_TOKEN=original-token
 
       const session = await store.loadSession('default');
       expect(session?.authorizationToken).toBe('saved-token');
+
+      // File should be updated
+      const fileContent = fs.readFileSync(envPath, 'utf8');
+      expect(fileContent).toContain('SAP_JWT_TOKEN=saved-token');
     });
   });
 });

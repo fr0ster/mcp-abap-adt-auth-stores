@@ -6,8 +6,8 @@
  * 
  * Use case: `mcp-abap-adt --env=/path/to/.env`
  * 
- * The store is READ-ONLY for connection config (writes only update in-memory state).
- * For token refresh scenarios (JWT), the in-memory state is used.
+ * The store reads initial config from .env file and can update JWT tokens back to the file.
+ * For token refresh scenarios (JWT), the refreshed token is written back to the .env file.
  */
 
 import * as fs from 'fs';
@@ -206,7 +206,7 @@ export class EnvFileSessionStore implements ISessionStore {
   }
 
   async saveSession(destination: string, config: IConfig): Promise<void> {
-    // Save to in-memory only (don't overwrite .env file)
+    // Save to in-memory and write JWT changes to file
     const data: EnvSessionData = {
       serviceUrl: config.serviceUrl || this.loadedData?.serviceUrl || '',
       sapClient: config.sapClient || this.loadedData?.sapClient,
@@ -221,7 +221,13 @@ export class EnvFileSessionStore implements ISessionStore {
     };
 
     this.inMemoryUpdates.set(destination, data);
-    this.log?.debug(`EnvFileSessionStore: saved session to memory`, { destination });
+    
+    // Write JWT tokens back to file
+    if (data.authType === 'jwt' && data.jwtToken) {
+      await this.save();
+    }
+    
+    this.log?.debug(`EnvFileSessionStore: saved session`, { destination, authType: data.authType });
   }
 
   async getConnectionConfig(destination: string): Promise<IConnectionConfig | null> {
@@ -266,6 +272,12 @@ export class EnvFileSessionStore implements ISessionStore {
     };
 
     this.inMemoryUpdates.set(destination, data);
+    
+    // Write JWT token back to file if updated
+    if (data.authType === 'jwt' && config.authorizationToken) {
+      await this.save();
+    }
+    
     this.log?.debug(`EnvFileSessionStore: set connection config`, { destination, serviceUrl: data.serviceUrl });
   }
 
@@ -306,6 +318,12 @@ export class EnvFileSessionStore implements ISessionStore {
     };
 
     this.inMemoryUpdates.set(destination, data);
+    
+    // Write refresh token back to file if updated
+    if (config.refreshToken) {
+      await this.save();
+    }
+    
     this.log?.debug(`EnvFileSessionStore: set authorization config`, { destination });
   }
 
@@ -331,6 +349,10 @@ export class EnvFileSessionStore implements ISessionStore {
     };
 
     this.inMemoryUpdates.set(destination, data);
+    
+    // Write to file
+    await this.save();
+    
     this.log?.debug(`EnvFileSessionStore: set token`, { destination });
   }
 
@@ -355,7 +377,74 @@ export class EnvFileSessionStore implements ISessionStore {
     };
 
     this.inMemoryUpdates.set(destination, data);
+    
+    // Write to file
+    await this.save();
+    
     this.log?.debug(`EnvFileSessionStore: set refresh token`, { destination });
+  }
+
+  /**
+   * Save in-memory updates back to the .env file
+   * Updates only JWT-related variables (SAP_JWT_TOKEN, SAP_REFRESH_TOKEN)
+   */
+  async save(): Promise<void> {
+    // Get the latest data (either from in-memory or loaded)
+    const destinations = Array.from(this.inMemoryUpdates.keys());
+    if (destinations.length === 0) {
+      this.log?.debug(`EnvFileSessionStore: nothing to save, no in-memory updates`);
+      return;
+    }
+
+    // Use the first destination (there should only be one for --env mode)
+    const data = this.inMemoryUpdates.get(destinations[0]);
+    if (!data) {
+      this.log?.debug(`EnvFileSessionStore: nothing to save, no data`);
+      return;
+    }
+
+    try {
+      // Read current file content
+      let content = '';
+      if (fs.existsSync(this.envFilePath)) {
+        content = fs.readFileSync(this.envFilePath, 'utf-8');
+      }
+
+      // Update or add JWT-related variables
+      const updates: Record<string, string | undefined> = {
+        'SAP_JWT_TOKEN': data.jwtToken,
+        'SAP_REFRESH_TOKEN': data.refreshToken,
+      };
+
+      for (const [key, value] of Object.entries(updates)) {
+        if (value === undefined) continue;
+        
+        const regex = new RegExp(`^${key}=.*$`, 'm');
+        const newLine = `${key}=${value}`;
+        
+        if (regex.test(content)) {
+          // Update existing line
+          content = content.replace(regex, newLine);
+        } else {
+          // Add new line at the end
+          content = content.trimEnd() + '\n' + newLine + '\n';
+        }
+      }
+
+      // Write back to file
+      fs.writeFileSync(this.envFilePath, content, 'utf-8');
+      this.log?.info(`EnvFileSessionStore: saved to file`, { 
+        filePath: this.envFilePath,
+        hasJwtToken: !!data.jwtToken,
+        hasRefreshToken: !!data.refreshToken,
+      });
+    } catch (error) {
+      this.log?.error(`EnvFileSessionStore: failed to save to file`, {
+        error: error instanceof Error ? error.message : String(error),
+        filePath: this.envFilePath,
+      });
+      throw error;
+    }
   }
 
   /**

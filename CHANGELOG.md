@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.8] - 2025-12-21
+
+### Added
+- **EnvFileSessionStore**: File persistence for JWT tokens
+  - `save()` method writes `SAP_JWT_TOKEN` and `SAP_REFRESH_TOKEN` back to the .env file
+  - `setToken()`, `setRefreshToken()`, `setConnectionConfig()`, `setAuthorizationConfig()`, `saveSession()` now automatically persist JWT changes to file
+  - Enables token refresh flow to update the .env file with new tokens
+
+### Changed
+- **EnvFileSessionStore**: No longer "read-only" for JWT auth
+  - Basic auth credentials remain read-only (not written back)
+  - JWT tokens are persisted on update
+
 ## [0.2.7] - 2025-12-21
 
 ### Fixed
