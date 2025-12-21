@@ -20,6 +20,9 @@ export { XsuaaSessionStore } from './stores/xsuaa/XsuaaSessionStore';
 export { SafeXsuaaSessionStore } from './stores/xsuaa/SafeXsuaaSessionStore';
 export { XsuaaServiceKeyStore } from './stores/xsuaa/XsuaaServiceKeyStore';
 
+// Env file stores (for --env=path scenarios)
+export { EnvFileSessionStore } from './stores/env/EnvFileSessionStore';
+
 // Error classes
 export { 
   StoreError, 

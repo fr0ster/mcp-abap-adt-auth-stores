@@ -90,6 +90,9 @@ Session stores manage authentication tokens and configuration:
 - **`SafeAbapSessionStore`** - In-memory store for ABAP sessions
 - **`SafeXsuaaSessionStore`** - In-memory store for XSUAA sessions
 
+**File-based single-file stores**:
+- **`EnvFileSessionStore`** - Reads from a specific `.env` file path (e.g., `--env /path/to/.env`)
+
 ## Usage
 
 ### BTP Stores (base BTP without sapUrl)
@@ -140,6 +143,54 @@ const sessionStore = new XsuaaSessionStore('/path/to/sessions', 'https://default
 // defaultServiceUrl is REQUIRED (cannot be obtained from service key)
 const safeSessionStore = new SafeXsuaaSessionStore('https://default.mcp.com', logger);
 ```
+
+### EnvFileSessionStore (Single File)
+
+`EnvFileSessionStore` reads connection configuration from a specific `.env` file path rather than a directory. This is useful for the `--env` CLI option.
+
+```typescript
+import { EnvFileSessionStore } from '@mcp-abap-adt/auth-stores';
+
+// Create store pointing to specific .env file
+const store = new EnvFileSessionStore('/path/to/.env', logger);
+
+// Check the auth type from the file
+const authType = store.getAuthType(); // 'basic' | 'jwt' | null
+
+// Load session (works like other session stores)
+const config = await store.loadSession('default');
+console.log(config?.serviceUrl, config?.authType);
+
+// For basic auth
+console.log(config?.username, config?.password);
+
+// For JWT auth
+console.log(config?.authorizationToken, config?.refreshToken);
+```
+
+**Env file format:**
+```bash
+# Connection
+SAP_URL=https://your-sap-system.com
+SAP_CLIENT=100
+
+# Auth type: 'basic' or 'jwt' (defaults to 'basic')
+SAP_AUTH_TYPE=basic
+
+# Basic auth credentials
+SAP_USERNAME=your-username
+SAP_PASSWORD=your-password
+
+# OR JWT auth
+# SAP_AUTH_TYPE=jwt
+# SAP_JWT_TOKEN=your-jwt-token
+# SAP_REFRESH_TOKEN=your-refresh-token
+# SAP_UAA_URL=https://uaa.example.com
+# SAP_UAA_CLIENT_ID=client-id
+# SAP_UAA_CLIENT_SECRET=client-secret
+```
+
+**Important**: This store is **read-only** for the file. Token updates (e.g., refreshed JWT tokens) are stored in memory only and do not modify the original `.env` file.
 
 ### Directory Configuration
 

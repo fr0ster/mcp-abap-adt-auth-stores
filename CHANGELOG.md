@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6] - 2025-12-21
+
+### Added
+- **EnvFileSessionStore**: New session store that reads from a specific `.env` file path
+  - Use case: `mcp-abap-adt --env /path/to/.env` CLI option
+  - Supports both basic auth (SAP_USERNAME/SAP_PASSWORD) and JWT auth (SAP_JWT_TOKEN)
+  - `getAuthType()` method to determine auth type from the file
+  - Read-only for file content; token updates stored in memory only
+  - Automatic detection of auth type based on file content
+
 ## [0.2.5] - 2025-12-19
 
 ### Fixed
