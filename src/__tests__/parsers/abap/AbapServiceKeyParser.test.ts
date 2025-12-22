@@ -84,7 +84,9 @@ describe('AbapServiceKeyParser', () => {
         },
       };
 
-      expect(() => parser.parse(invalidKey)).toThrow('Service key does not match ABAP format (missing uaa object)');
+      expect(() => parser.parse(invalidKey)).toThrow(
+        'Service key does not match ABAP format (missing uaa object)',
+      );
     });
 
     it('should throw error if uaa.url is missing', () => {
@@ -95,7 +97,9 @@ describe('AbapServiceKeyParser', () => {
         },
       };
 
-      expect(() => parser.parse(invalidKey)).toThrow('Service key "uaa" object missing required fields: url, clientid, clientsecret');
+      expect(() => parser.parse(invalidKey)).toThrow(
+        'Service key "uaa" object missing required fields: url, clientid, clientsecret',
+      );
     });
 
     it('should throw error if uaa.clientid is missing', () => {
@@ -106,7 +110,9 @@ describe('AbapServiceKeyParser', () => {
         },
       };
 
-      expect(() => parser.parse(invalidKey)).toThrow('Service key "uaa" object missing required fields: url, clientid, clientsecret');
+      expect(() => parser.parse(invalidKey)).toThrow(
+        'Service key "uaa" object missing required fields: url, clientid, clientsecret',
+      );
     });
 
     it('should throw error if uaa.clientsecret is missing', () => {
@@ -117,8 +123,9 @@ describe('AbapServiceKeyParser', () => {
         },
       };
 
-      expect(() => parser.parse(invalidKey)).toThrow('Service key "uaa" object missing required fields: url, clientid, clientsecret');
+      expect(() => parser.parse(invalidKey)).toThrow(
+        'Service key "uaa" object missing required fields: url, clientid, clientsecret',
+      );
     });
   });
 });
-

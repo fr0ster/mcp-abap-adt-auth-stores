@@ -111,7 +111,9 @@ describe('XsuaaServiceKeyParser', () => {
       const result = parser.parse(validKey) as any;
       // For OAuth2 authorization endpoint, use 'url' (not 'apiurl')
       // 'apiurl' is for API calls, authorization uses base 'url'
-      expect(result.uaa.url).toBe('https://test.authentication.sap.hana.ondemand.com');
+      expect(result.uaa.url).toBe(
+        'https://test.authentication.sap.hana.ondemand.com',
+      );
     });
 
     it('should preserve abap object if present', () => {
@@ -154,8 +156,9 @@ describe('XsuaaServiceKeyParser', () => {
         },
       };
 
-      expect(() => parser.parse(invalidKey)).toThrow('Service key does not match XSUAA format');
+      expect(() => parser.parse(invalidKey)).toThrow(
+        'Service key does not match XSUAA format',
+      );
     });
   });
 });
-

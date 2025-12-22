@@ -2,11 +2,13 @@
  * XSUAA Token storage - saves tokens to .env files with XSUAA_* variables
  */
 
-
-import * as fs from 'fs';
-import * as path from 'path';
-import { XSUAA_AUTHORIZATION_VARS, XSUAA_CONNECTION_VARS } from '../../utils/constants';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import type { ILogger } from '@mcp-abap-adt/interfaces';
+import {
+  XSUAA_AUTHORIZATION_VARS,
+  XSUAA_CONNECTION_VARS,
+} from '../../utils/constants';
 
 // Internal type for XSUAA session storage
 interface XsuaaSessionConfig {
@@ -29,12 +31,14 @@ export async function saveXsuaaTokenToEnv(
   destination: string,
   savePath: string,
   config: XsuaaSessionConfig,
-  log?: ILogger
+  log?: ILogger,
 ): Promise<void> {
   const envFilePath = path.join(savePath, `${destination}.env`);
   const tempFilePath = `${envFilePath}.tmp`;
   log?.debug(`Saving XSUAA token to env file: ${envFilePath}`);
-  log?.debug(`Config to save: token(${config.jwtToken.length} chars), hasRefreshToken(${!!config.refreshToken}), hasUaaUrl(${!!config.uaaUrl}), mcpUrl(${config.mcpUrl ? config.mcpUrl.substring(0, 50) + '...' : 'none'})`);
+  log?.debug(
+    `Config to save: token(${config.jwtToken.length} chars), hasRefreshToken(${!!config.refreshToken}), hasUaaUrl(${!!config.uaaUrl}), mcpUrl(${config.mcpUrl ? `${config.mcpUrl.substring(0, 50)}...` : 'none'})`,
+  );
 
   // Ensure directory exists
   if (!fs.existsSync(savePath)) {
@@ -46,7 +50,9 @@ export async function saveXsuaaTokenToEnv(
   let existingContent = '';
   if (fs.existsSync(envFilePath)) {
     existingContent = fs.readFileSync(envFilePath, 'utf8');
-    log?.debug(`Reading existing XSUAA env file, size: ${existingContent.length} bytes`);
+    log?.debug(
+      `Reading existing XSUAA env file, size: ${existingContent.length} bytes`,
+    );
   } else {
     log?.debug(`XSUAA env file does not exist, creating new one`);
   }
@@ -66,16 +72,25 @@ export async function saveXsuaaTokenToEnv(
     if (match) {
       const key = match[1].trim();
       // Skip old SAP_* variables for XSUAA (we use XSUAA_* now)
-      if (key.startsWith('SAP_') && (key === 'SAP_URL' || key === 'SAP_JWT_TOKEN' || key === 'SAP_REFRESH_TOKEN' || 
-          key === 'SAP_UAA_URL' || key === 'SAP_UAA_CLIENT_ID' || key === 'SAP_UAA_CLIENT_SECRET')) {
+      if (
+        key.startsWith('SAP_') &&
+        (key === 'SAP_URL' ||
+          key === 'SAP_JWT_TOKEN' ||
+          key === 'SAP_REFRESH_TOKEN' ||
+          key === 'SAP_UAA_URL' ||
+          key === 'SAP_UAA_CLIENT_ID' ||
+          key === 'SAP_UAA_CLIENT_SECRET')
+      ) {
         continue; // Don't preserve old SAP_* variables
       }
       const value = match[2].trim().replace(/^["']|["']$/g, ''); // Remove quotes
       existingVars.set(key, value);
     }
   }
-  
-  log?.debug(`Preserved ${existingVars.size} existing variables from XSUAA env file`);
+
+  log?.debug(
+    `Preserved ${existingVars.size} existing variables from XSUAA env file`,
+  );
 
   // Update with new values (XSUAA_* variables)
   // mcpUrl can be saved as additional variable (not part of CONNECTION_VARS, but can be stored for convenience)
@@ -87,7 +102,10 @@ export async function saveXsuaaTokenToEnv(
   existingVars.set(XSUAA_CONNECTION_VARS.AUTHORIZATION_TOKEN, config.jwtToken);
 
   if (config.refreshToken) {
-    existingVars.set(XSUAA_AUTHORIZATION_VARS.REFRESH_TOKEN, config.refreshToken);
+    existingVars.set(
+      XSUAA_AUTHORIZATION_VARS.REFRESH_TOKEN,
+      config.refreshToken,
+    );
   }
 
   if (config.uaaUrl) {
@@ -95,32 +113,42 @@ export async function saveXsuaaTokenToEnv(
   }
 
   if (config.uaaClientId) {
-    existingVars.set(XSUAA_AUTHORIZATION_VARS.UAA_CLIENT_ID, config.uaaClientId);
+    existingVars.set(
+      XSUAA_AUTHORIZATION_VARS.UAA_CLIENT_ID,
+      config.uaaClientId,
+    );
   }
 
   if (config.uaaClientSecret) {
-    existingVars.set(XSUAA_AUTHORIZATION_VARS.UAA_CLIENT_SECRET, config.uaaClientSecret);
+    existingVars.set(
+      XSUAA_AUTHORIZATION_VARS.UAA_CLIENT_SECRET,
+      config.uaaClientSecret,
+    );
   }
 
   // Write to temporary file first (atomic write)
   const envLines: string[] = [];
   for (const [key, value] of existingVars.entries()) {
     // Escape value if it contains spaces or special characters
-    const escapedValue = value.includes(' ') || value.includes('=') || value.includes('#')
-      ? `"${value.replace(/"/g, '\\"')}"`
-      : value;
+    const escapedValue =
+      value.includes(' ') || value.includes('=') || value.includes('#')
+        ? `"${value.replace(/"/g, '\\"')}"`
+        : value;
     envLines.push(`${key}=${escapedValue}`);
   }
 
-  const envContent = envLines.join('\n') + '\n';
+  const envContent = `${envLines.join('\n')}\n`;
 
-  log?.debug(`Writing ${envLines.length} XSUAA variables to env file: ${Object.keys(config).join(', ')}`);
+  log?.debug(
+    `Writing ${envLines.length} XSUAA variables to env file: ${Object.keys(config).join(', ')}`,
+  );
 
   // Write to temp file
   fs.writeFileSync(tempFilePath, envContent, 'utf8');
 
   // Atomic rename
   fs.renameSync(tempFilePath, envFilePath);
-  log?.info(`XSUAA token saved to ${envFilePath}: token(${config.jwtToken.length} chars), mcpUrl(${config.mcpUrl ? config.mcpUrl.substring(0, 50) + '...' : 'none'}), variables(${envLines.length})`);
+  log?.info(
+    `XSUAA token saved to ${envFilePath}: token(${config.jwtToken.length} chars), mcpUrl(${config.mcpUrl ? `${config.mcpUrl.substring(0, 50)}...` : 'none'}), variables(${envLines.length})`,
+  );
 }
-

@@ -5,10 +5,10 @@
 
 import { AbapServiceKeyStore } from '../../../stores/abap/AbapServiceKeyStore';
 import {
-  loadTestConfig,
-  hasRealConfig,
   getAbapDestination,
   getServiceKeysDir,
+  hasRealConfig,
+  loadTestConfig,
 } from '../../helpers/configHelpers';
 
 describe('AbapServiceKeyStore Integration', () => {
@@ -25,17 +25,19 @@ describe('AbapServiceKeyStore Integration', () => {
       }
 
       if (!abapDestination || !serviceKeysDir) {
-        console.warn('⚠️  Skipping ABAP integration test - missing required config');
+        console.warn(
+          '⚠️  Skipping ABAP integration test - missing required config',
+        );
         return;
       }
 
       const store = new AbapServiceKeyStore(serviceKeysDir);
 
       const serviceKey = await store.getServiceKey(abapDestination);
-      
+
       expect(serviceKey).toBeDefined();
       expect(serviceKey).not.toBeNull();
-      
+
       if (serviceKey) {
         expect(serviceKey.uaaUrl).toBeDefined();
         expect(serviceKey.uaaClientId).toBeDefined();
@@ -45,22 +47,26 @@ describe('AbapServiceKeyStore Integration', () => {
 
     it('should get authorization config from real ABAP service key', async () => {
       if (!hasRealAbapConfig) {
-        console.warn('⚠️  Skipping ABAP authorization config test - no real config');
+        console.warn(
+          '⚠️  Skipping ABAP authorization config test - no real config',
+        );
         return;
       }
 
       if (!abapDestination || !serviceKeysDir) {
-        console.warn('⚠️  Skipping ABAP authorization config test - missing required config');
+        console.warn(
+          '⚠️  Skipping ABAP authorization config test - missing required config',
+        );
         return;
       }
 
       const store = new AbapServiceKeyStore(serviceKeysDir);
 
       const authConfig = await store.getAuthorizationConfig(abapDestination);
-      
+
       expect(authConfig).toBeDefined();
       expect(authConfig).not.toBeNull();
-      
+
       if (authConfig) {
         expect(authConfig.uaaUrl).toBeDefined();
         expect(authConfig.uaaUrl?.length).toBeGreaterThan(0);
@@ -73,23 +79,26 @@ describe('AbapServiceKeyStore Integration', () => {
 
     it('should get connection config from real ABAP service key', async () => {
       if (!hasRealAbapConfig) {
-        console.warn('⚠️  Skipping ABAP connection config test - no real config');
+        console.warn(
+          '⚠️  Skipping ABAP connection config test - no real config',
+        );
         return;
       }
 
       if (!abapDestination || !serviceKeysDir) {
-        console.warn('⚠️  Skipping ABAP connection config test - missing required config');
+        console.warn(
+          '⚠️  Skipping ABAP connection config test - missing required config',
+        );
         return;
       }
 
       const store = new AbapServiceKeyStore(serviceKeysDir);
 
       const connConfig = await store.getConnectionConfig(abapDestination);
-      
+
       expect(connConfig).toBeDefined();
       // Service key may not have serviceUrl, but should return config object
       expect(connConfig).not.toBeNull();
     }, 10000);
   });
 });
-

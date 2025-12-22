@@ -2,24 +2,26 @@
  * Path resolver - resolves search paths for .env and .json files
  */
 
-import * as path from 'path';
+import * as path from 'node:path';
 
 /**
  * Resolve search paths based on priority:
  * 1. Constructor parameter (array of paths) - highest priority
  * 2. AUTH_BROKER_PATH environment variable (colon/semicolon-separated paths)
  * 3. Current working directory - lowest priority
- * 
+ *
  * @param constructorPaths Optional array of paths from constructor
  * @returns Array of resolved absolute paths to search
  */
-export function resolveSearchPaths(constructorPaths?: string | string[]): string[] {
+export function resolveSearchPaths(
+  constructorPaths?: string | string[],
+): string[] {
   const paths: string[] = [];
 
   // Priority 1: Constructor parameter
   if (constructorPaths) {
     if (Array.isArray(constructorPaths)) {
-      paths.push(...constructorPaths.map(p => path.resolve(p)));
+      paths.push(...constructorPaths.map((p) => path.resolve(p)));
     } else {
       paths.push(path.resolve(constructorPaths));
     }
@@ -29,8 +31,11 @@ export function resolveSearchPaths(constructorPaths?: string | string[]): string
   const envPath = process.env.AUTH_BROKER_PATH;
   if (envPath) {
     // Support both colon (Unix) and semicolon (Windows) separators
-    const envPaths = envPath.split(/[:;]/).map(p => p.trim()).filter(p => p.length > 0);
-    paths.push(...envPaths.map(p => path.resolve(p)));
+    const envPaths = envPath
+      .split(/[:;]/)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+    paths.push(...envPaths.map((p) => path.resolve(p)));
   }
 
   // Priority 3: Current working directory (only if no other paths specified)
@@ -58,11 +63,14 @@ export function resolveSearchPaths(constructorPaths?: string | string[]): string
  * @param searchPaths Array of paths to search
  * @returns Full path to file if found, null otherwise
  */
-export function findFileInPaths(fileName: string, searchPaths: string[]): string | null {
+export function findFileInPaths(
+  fileName: string,
+  searchPaths: string[],
+): string | null {
   for (const searchPath of searchPaths) {
     const filePath = path.join(searchPath, fileName);
     try {
-      const fs = require('fs');
+      const fs = require('node:fs');
       if (fs.existsSync(filePath)) {
         return filePath;
       }
@@ -72,4 +80,3 @@ export function findFileInPaths(fileName: string, searchPaths: string[]): string
   }
   return null;
 }
-

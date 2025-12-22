@@ -2,11 +2,11 @@
  * Unit tests for AbapServiceKeyStore (with mocks)
  */
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { jest } from '@jest/globals';
 import { AbapServiceKeyStore } from '../../../stores/abap/AbapServiceKeyStore';
 import { createTestLogger } from '../../helpers/testLogger';
-import * as fs from 'fs';
-import * as path from 'path';
-import { jest } from '@jest/globals';
 
 // Mock fs module
 jest.mock('fs', () => ({
@@ -88,7 +88,9 @@ describe('AbapServiceKeyStore', () => {
       mockFs.existsSync.mockReturnValue(true);
       mockFs.readFileSync.mockReturnValue(JSON.stringify(invalidKey));
 
-      await expect(store.getServiceKey(destination)).rejects.toThrow('Failed to parse service key');
+      await expect(store.getServiceKey(destination)).rejects.toThrow(
+        'Failed to parse service key',
+      );
     });
   });
 
@@ -135,10 +137,18 @@ describe('AbapServiceKeyStore', () => {
 
       await storeWithLogger.getAuthorizationConfig(destination);
 
-      expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining(`Reading service key file:`));
-      expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining(`File read successfully`));
-      expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining(`Parsed service key structure`));
-      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining(`Authorization config loaded from`));
+      expect(logger.debug).toHaveBeenCalledWith(
+        expect.stringContaining(`Reading service key file:`),
+      );
+      expect(logger.debug).toHaveBeenCalledWith(
+        expect.stringContaining(`File read successfully`),
+      );
+      expect(logger.debug).toHaveBeenCalledWith(
+        expect.stringContaining(`Parsed service key structure`),
+      );
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringContaining(`Authorization config loaded from`),
+      );
     });
 
     it('should return null if file not found', async () => {

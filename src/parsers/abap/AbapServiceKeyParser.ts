@@ -1,6 +1,6 @@
 /**
  * ABAP Service Key Parser
- * 
+ *
  * Parses standard ABAP service key format with nested uaa object:
  * {
  *   "uaa": {
@@ -37,9 +37,17 @@ export class AbapServiceKeyParser {
    * @param rawData Raw JSON data from service key file
    * @returns true if data has nested uaa object, false otherwise
    */
-  canParse(rawData: any): boolean {
-    const result = rawData && typeof rawData === 'object' && rawData.uaa && typeof rawData.uaa === 'object';
-    this.log?.debug(`canParse check: hasUaa(${!!rawData?.uaa}), result(${result})`);
+  canParse(rawData: unknown): boolean {
+    if (!rawData || typeof rawData !== 'object' || Array.isArray(rawData)) {
+      return false;
+    }
+    const data = rawData as Record<string, unknown>;
+    const result = !!(
+      data.uaa &&
+      typeof data.uaa === 'object' &&
+      !Array.isArray(data.uaa)
+    );
+    this.log?.debug(`canParse check: hasUaa(${!!data.uaa}), result(${result})`);
     return result;
   }
 
@@ -49,28 +57,52 @@ export class AbapServiceKeyParser {
    * @returns Parsed service key object
    * @throws Error if data cannot be parsed or is invalid
    */
-  parse(rawData: any): unknown {
-    this.log?.debug(`Parsing ABAP service key: hasUaa(${!!rawData?.uaa}), keys(${rawData ? Object.keys(rawData).join(', ') : 'none'})`);
-    
-    if (!this.canParse(rawData)) {
-      this.log?.error(`Service key does not match ABAP format: missing uaa object`);
-      throw new Error('Service key does not match ABAP format (missing uaa object)');
+  parse(rawData: unknown): unknown {
+    if (!rawData || typeof rawData !== 'object' || Array.isArray(rawData)) {
+      throw new Error('Service key data must be an object');
     }
+
+    const data = rawData as Record<string, unknown>;
+    this.log?.debug(
+      `Parsing ABAP service key: hasUaa(${!!data.uaa}), keys(${Object.keys(data).join(', ')})`,
+    );
+
+    if (!this.canParse(rawData)) {
+      this.log?.error(
+        `Service key does not match ABAP format: missing uaa object`,
+      );
+      throw new Error(
+        'Service key does not match ABAP format (missing uaa object)',
+      );
+    }
+
+    // After canParse, we know uaa exists and is an object
+    const uaa = data.uaa as Record<string, unknown>;
 
     // Validate UAA configuration
-    const hasUrl = !!rawData.uaa.url;
-    const hasClientId = !!rawData.uaa.clientid;
-    const hasClientSecret = !!rawData.uaa.clientsecret;
-    
-    this.log?.debug(`UAA validation: url(${hasUrl}), clientid(${hasClientId}), clientsecret(${hasClientSecret})`);
+    const hasUrl = typeof uaa.url === 'string' && uaa.url.length > 0;
+    const hasClientId =
+      typeof uaa.clientid === 'string' && uaa.clientid.length > 0;
+    const hasClientSecret =
+      typeof uaa.clientsecret === 'string' && uaa.clientsecret.length > 0;
+
+    this.log?.debug(
+      `UAA validation: url(${hasUrl}), clientid(${hasClientId}), clientsecret(${hasClientSecret})`,
+    );
 
     if (!hasUrl || !hasClientId || !hasClientSecret) {
-      this.log?.error(`Service key uaa object missing required fields: url(${hasUrl}), clientid(${hasClientId}), clientsecret(${hasClientSecret})`);
-      throw new Error('Service key "uaa" object missing required fields: url, clientid, clientsecret');
+      this.log?.error(
+        `Service key uaa object missing required fields: url(${hasUrl}), clientid(${hasClientId}), clientsecret(${hasClientSecret})`,
+      );
+      throw new Error(
+        'Service key "uaa" object missing required fields: url, clientid, clientsecret',
+      );
     }
 
-    this.log?.debug(`ABAP service key parsed successfully: uaaUrl(${rawData.uaa.url.substring(0, 40)}...), hasAbap(${!!rawData.abap})`);
+    const uaaUrl = typeof uaa.url === 'string' ? uaa.url : '';
+    this.log?.debug(
+      `ABAP service key parsed successfully: uaaUrl(${uaaUrl.substring(0, 40)}...), hasAbap(${!!data.abap})`,
+    );
     return rawData;
   }
 }
-

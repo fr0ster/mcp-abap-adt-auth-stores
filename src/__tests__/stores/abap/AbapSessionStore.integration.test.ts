@@ -3,13 +3,13 @@
  * Tests with real .env files from test-config.yaml
  */
 
-import { AbapSessionStore } from '../../../stores/abap/AbapSessionStore';
 import type { IConfig } from '@mcp-abap-adt/interfaces';
+import { AbapSessionStore } from '../../../stores/abap/AbapSessionStore';
 import {
-  loadTestConfig,
-  hasRealConfig,
   getAbapDestination,
   getSessionsDir,
+  hasRealConfig,
+  loadTestConfig,
 } from '../../helpers/configHelpers';
 
 describe('AbapSessionStore Integration', () => {
@@ -26,26 +26,32 @@ describe('AbapSessionStore Integration', () => {
       }
 
       if (!abapDestination || !sessionsDir) {
-        console.warn('⚠️  Skipping ABAP session load test - missing required config');
+        console.warn(
+          '⚠️  Skipping ABAP session load test - missing required config',
+        );
         return;
       }
 
       const store = new AbapSessionStore(sessionsDir);
 
       const session = await store.loadSession(abapDestination);
-      
+
       // Session may not exist, but store should not throw error
       expect(session).toBeDefined();
     }, 10000);
 
     it('should save and load ABAP session', async () => {
       if (!hasRealAbapConfig) {
-        console.warn('⚠️  Skipping ABAP session save/load test - no real config');
+        console.warn(
+          '⚠️  Skipping ABAP session save/load test - no real config',
+        );
         return;
       }
 
       if (!abapDestination || !sessionsDir) {
-        console.warn('⚠️  Skipping ABAP session save/load test - missing required config');
+        console.warn(
+          '⚠️  Skipping ABAP session save/load test - missing required config',
+        );
         return;
       }
 
@@ -68,13 +74,15 @@ describe('AbapSessionStore Integration', () => {
 
       // Load session
       const loadedSession = await store.loadSession(abapDestination);
-      
+
       expect(loadedSession).toBeDefined();
       expect(loadedSession).not.toBeNull();
-      
+
       if (loadedSession) {
         expect(loadedSession.serviceUrl).toBe(testSession.serviceUrl);
-        expect(loadedSession.authorizationToken).toBe(testSession.authorizationToken);
+        expect(loadedSession.authorizationToken).toBe(
+          testSession.authorizationToken,
+        );
         expect(loadedSession.refreshToken).toBe(testSession.refreshToken);
         expect(loadedSession.uaaUrl).toBe(testSession.uaaUrl);
         expect(loadedSession.uaaClientId).toBe(testSession.uaaClientId);
@@ -89,19 +97,23 @@ describe('AbapSessionStore Integration', () => {
 
     it('should get authorization config from real session', async () => {
       if (!hasRealAbapConfig) {
-        console.warn('⚠️  Skipping ABAP authorization config test - no real config');
+        console.warn(
+          '⚠️  Skipping ABAP authorization config test - no real config',
+        );
         return;
       }
 
       if (!abapDestination || !sessionsDir) {
-        console.warn('⚠️  Skipping ABAP authorization config test - missing required config');
+        console.warn(
+          '⚠️  Skipping ABAP authorization config test - missing required config',
+        );
         return;
       }
 
       const store = new AbapSessionStore(sessionsDir);
 
       const authConfig = await store.getAuthorizationConfig(abapDestination);
-      
+
       // May be null if session doesn't exist
       if (authConfig) {
         expect(authConfig.uaaUrl).toBeDefined();
@@ -112,19 +124,23 @@ describe('AbapSessionStore Integration', () => {
 
     it('should get connection config from real session', async () => {
       if (!hasRealAbapConfig) {
-        console.warn('⚠️  Skipping ABAP connection config test - no real config');
+        console.warn(
+          '⚠️  Skipping ABAP connection config test - no real config',
+        );
         return;
       }
 
       if (!abapDestination || !sessionsDir) {
-        console.warn('⚠️  Skipping ABAP connection config test - missing required config');
+        console.warn(
+          '⚠️  Skipping ABAP connection config test - missing required config',
+        );
         return;
       }
 
       const store = new AbapSessionStore(sessionsDir);
 
       const connConfig = await store.getConnectionConfig(abapDestination);
-      
+
       // May be null if session doesn't exist
       if (connConfig) {
         expect(connConfig.serviceUrl).toBeDefined();
@@ -133,4 +149,3 @@ describe('AbapSessionStore Integration', () => {
     }, 10000);
   });
 });
-

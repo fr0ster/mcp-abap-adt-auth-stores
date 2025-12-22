@@ -2,8 +2,8 @@
  * ENV File Handler - utility class for reading/writing .env files
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as dotenv from 'dotenv';
 
 /**
@@ -17,7 +17,10 @@ export class EnvFileHandler {
    * @returns Parsed environment variables or null if file not found
    * @throws Error if file exists but cannot be read
    */
-  static async load(fileName: string, directory: string): Promise<Record<string, string> | null> {
+  static async load(
+    fileName: string,
+    directory: string,
+  ): Promise<Record<string, string> | null> {
     const filePath = path.join(directory, fileName);
 
     if (!fs.existsSync(filePath)) {
@@ -29,7 +32,7 @@ export class EnvFileHandler {
       return dotenv.parse(fileContent);
     } catch (error) {
       throw new Error(
-        `Failed to load ENV file "${fileName}": ${error instanceof Error ? error.message : String(error)}`
+        `Failed to load ENV file "${fileName}": ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -44,7 +47,7 @@ export class EnvFileHandler {
   static async save(
     filePath: string,
     variables: Record<string, string>,
-    preserveExisting: boolean = true
+    preserveExisting: boolean = true,
   ): Promise<void> {
     // Ensure directory exists
     const dir = path.dirname(filePath);
@@ -53,7 +56,7 @@ export class EnvFileHandler {
     }
 
     // Read existing .env file if it exists and preserveExisting is true
-    let existingVars = new Map<string, string>();
+    const existingVars = new Map<string, string>();
     if (preserveExisting && fs.existsSync(filePath)) {
       try {
         const existingContent = fs.readFileSync(filePath, 'utf8');
@@ -61,7 +64,7 @@ export class EnvFileHandler {
         for (const [key, value] of Object.entries(parsed)) {
           existingVars.set(key, value);
         }
-      } catch (error) {
+      } catch (_error) {
         // If existing file is invalid, ignore it
       }
     }
@@ -74,20 +77,20 @@ export class EnvFileHandler {
     // Write to temporary file first (atomic write)
     const tempFilePath = `${filePath}.tmp`;
     const envLines: string[] = [];
-    
+
     for (const [key, value] of existingVars.entries()) {
       // Escape value if it contains spaces or special characters
-      const escapedValue = value.includes(' ') || value.includes('=') || value.includes('#')
-        ? `"${value.replace(/"/g, '\\"')}"`
-        : value;
+      const escapedValue =
+        value.includes(' ') || value.includes('=') || value.includes('#')
+          ? `"${value.replace(/"/g, '\\"')}"`
+          : value;
       envLines.push(`${key}=${escapedValue}`);
     }
 
-    const envContent = envLines.join('\n') + '\n';
+    const envContent = `${envLines.join('\n')}\n`;
     fs.writeFileSync(tempFilePath, envContent, 'utf8');
 
     // Atomic rename
     fs.renameSync(tempFilePath, filePath);
   }
 }
-

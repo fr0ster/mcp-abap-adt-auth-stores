@@ -1,13 +1,13 @@
 /**
  * Service key loader - loads service key JSON files by destination name for ABAP
- * 
+ *
  * Uses parsers to handle different service key formats:
  * - AbapServiceKeyParser: Standard ABAP service key format with nested uaa object
  * - XsuaaServiceKeyParser: Direct XSUAA service key format from BTP
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { AbapServiceKeyParser } from '../../parsers/abap/AbapServiceKeyParser';
 import { XsuaaServiceKeyParser } from '../../parsers/xsuaa/XsuaaServiceKeyParser';
 
@@ -18,7 +18,10 @@ import { XsuaaServiceKeyParser } from '../../parsers/xsuaa/XsuaaServiceKeyParser
  * @param directory Directory where the service key file is located
  * @returns Service key object or null if file not found
  */
-export async function loadServiceKey(destination: string, directory: string): Promise<unknown | null> {
+export async function loadServiceKey(
+  destination: string,
+  directory: string,
+): Promise<unknown | null> {
   const fileName = `${destination}.json`;
   const serviceKeyPath = path.join(directory, fileName);
 
@@ -31,10 +34,7 @@ export async function loadServiceKey(destination: string, directory: string): Pr
     const rawData = JSON.parse(fileContent);
 
     // Try parsers in order: ABAP format first, then XSUAA format
-    const parsers = [
-      new AbapServiceKeyParser(),
-      new XsuaaServiceKeyParser(),
-    ];
+    const parsers = [new AbapServiceKeyParser(), new XsuaaServiceKeyParser()];
 
     for (const parser of parsers) {
       if (parser.canParse(rawData)) {
@@ -45,17 +45,16 @@ export async function loadServiceKey(destination: string, directory: string): Pr
     // No parser could handle the data
     throw new Error(
       'Service key does not match any supported format. ' +
-      'Expected either ABAP format (with nested uaa object) or XSUAA format (with url, clientid, clientsecret at root level)'
+        'Expected either ABAP format (with nested uaa object) or XSUAA format (with url, clientid, clientsecret at root level)',
     );
   } catch (error) {
     if (error instanceof SyntaxError) {
       throw new Error(
-        `Invalid JSON in service key file for destination "${destination}": ${error.message}`
+        `Invalid JSON in service key file for destination "${destination}": ${error.message}`,
       );
     }
     throw new Error(
-      `Failed to load service key for destination "${destination}": ${error instanceof Error ? error.message : String(error)}`
+      `Failed to load service key for destination "${destination}": ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 }
-

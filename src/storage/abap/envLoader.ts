@@ -2,12 +2,14 @@
  * Environment file loader - loads .env files by destination name for ABAP
  */
 
-
-import * as fs from 'fs';
-import * as path from 'path';
-import * as dotenv from 'dotenv';
-import { ABAP_AUTHORIZATION_VARS, ABAP_CONNECTION_VARS } from '../../utils/constants';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import type { ILogger } from '@mcp-abap-adt/interfaces';
+import * as dotenv from 'dotenv';
+import {
+  ABAP_AUTHORIZATION_VARS,
+  ABAP_CONNECTION_VARS,
+} from '../../utils/constants';
 
 // Internal type for ABAP environment configuration
 interface EnvConfig {
@@ -31,7 +33,11 @@ interface EnvConfig {
  * @param log Optional logger for logging operations
  * @returns EnvConfig object or null if file not found
  */
-export async function loadEnvFile(destination: string, directory: string, log?: ILogger): Promise<EnvConfig | null> {
+export async function loadEnvFile(
+  destination: string,
+  directory: string,
+  log?: ILogger,
+): Promise<EnvConfig | null> {
   const fileName = `${destination}.env`;
   const envFilePath = path.join(directory, fileName);
   log?.debug(`Reading env file: ${envFilePath}`);
@@ -54,7 +60,9 @@ export async function loadEnvFile(destination: string, directory: string, log?: 
     const username = parsed[ABAP_CONNECTION_VARS.USERNAME];
     const password = parsed[ABAP_CONNECTION_VARS.PASSWORD];
 
-    log?.debug(`Extracted fields: hasSapUrl(${!!sapUrl}), hasJwtToken(${jwtToken !== undefined && jwtToken !== null}), hasUsername(${!!username}), hasPassword(${!!password})`);
+    log?.debug(
+      `Extracted fields: hasSapUrl(${!!sapUrl}), hasJwtToken(${jwtToken !== undefined && jwtToken !== null}), hasUsername(${!!username}), hasPassword(${!!password})`,
+    );
 
     // sapUrl is always required
     if (!sapUrl) {
@@ -65,9 +73,10 @@ export async function loadEnvFile(destination: string, directory: string, log?: 
     // Determine auth type: if username/password present and no jwtToken, use basic auth
     // If jwtToken present, use JWT auth
     // If neither is present, it's OK - auth can be set later (e.g., via setAuthorizationConfig)
-    const isBasicAuth = !!(username && password) && (!jwtToken || jwtToken.trim() === '');
+    const isBasicAuth =
+      !!(username && password) && (!jwtToken || jwtToken.trim() === '');
     const isJwtAuth = !!(jwtToken && jwtToken.trim() !== '');
-    const hasNoAuth = !isBasicAuth && !isJwtAuth;
+    const _hasNoAuth = !isBasicAuth && !isJwtAuth;
 
     const config: EnvConfig = {
       sapUrl: sapUrl.trim(),
@@ -93,7 +102,8 @@ export async function loadEnvFile(destination: string, directory: string, log?: 
     }
 
     if (parsed[ABAP_AUTHORIZATION_VARS.REFRESH_TOKEN]) {
-      config.refreshToken = parsed[ABAP_AUTHORIZATION_VARS.REFRESH_TOKEN].trim();
+      config.refreshToken =
+        parsed[ABAP_AUTHORIZATION_VARS.REFRESH_TOKEN].trim();
     }
 
     if (parsed[ABAP_AUTHORIZATION_VARS.UAA_URL]) {
@@ -105,7 +115,8 @@ export async function loadEnvFile(destination: string, directory: string, log?: 
     }
 
     if (parsed[ABAP_AUTHORIZATION_VARS.UAA_CLIENT_SECRET]) {
-      config.uaaClientSecret = parsed[ABAP_AUTHORIZATION_VARS.UAA_CLIENT_SECRET].trim();
+      config.uaaClientSecret =
+        parsed[ABAP_AUTHORIZATION_VARS.UAA_CLIENT_SECRET].trim();
     }
 
     if (parsed[ABAP_CONNECTION_VARS.SAP_LANGUAGE]) {
@@ -113,16 +124,20 @@ export async function loadEnvFile(destination: string, directory: string, log?: 
     }
 
     const tokenLength = config.jwtToken?.length || 0;
-    const authInfo = config.authType === 'basic' 
-      ? `basic auth (username: ${config.username})` 
-      : `JWT token(${tokenLength} chars)`;
-    log?.info(`Env config loaded from ${envFilePath}: sapUrl(${config.sapUrl.substring(0, 50)}...), ${authInfo}, hasRefreshToken(${!!config.refreshToken}), hasUaaUrl(${!!config.uaaUrl})`);
+    const authInfo =
+      config.authType === 'basic'
+        ? `basic auth (username: ${config.username})`
+        : `JWT token(${tokenLength} chars)`;
+    log?.info(
+      `Env config loaded from ${envFilePath}: sapUrl(${config.sapUrl.substring(0, 50)}...), ${authInfo}, hasRefreshToken(${!!config.refreshToken}), hasUaaUrl(${!!config.uaaUrl})`,
+    );
     return config;
   } catch (error) {
-    log?.error(`Failed to load env file from ${envFilePath}: ${error instanceof Error ? error.message : String(error)}`);
+    log?.error(
+      `Failed to load env file from ${envFilePath}: ${error instanceof Error ? error.message : String(error)}`,
+    );
     throw new Error(
-      `Failed to load environment file for destination "${destination}": ${error instanceof Error ? error.message : String(error)}`
+      `Failed to load environment file for destination "${destination}": ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 }
-

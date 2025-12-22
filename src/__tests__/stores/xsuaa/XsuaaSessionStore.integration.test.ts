@@ -3,13 +3,13 @@
  * Tests with real .env files from test-config.yaml
  */
 
-import { XsuaaSessionStore } from '../../../stores/xsuaa/XsuaaSessionStore';
 import type { IConfig } from '@mcp-abap-adt/interfaces';
+import { XsuaaSessionStore } from '../../../stores/xsuaa/XsuaaSessionStore';
 import {
-  loadTestConfig,
-  hasRealConfig,
-  getXsuaaDestinations,
   getSessionsDir,
+  getXsuaaDestinations,
+  hasRealConfig,
+  loadTestConfig,
 } from '../../helpers/configHelpers';
 
 describe('XsuaaSessionStore Integration', () => {
@@ -26,30 +26,44 @@ describe('XsuaaSessionStore Integration', () => {
       }
 
       if (!xsuaaDestinations.btp_destination || !sessionsDir) {
-        console.warn('⚠️  Skipping XSUAA session load test - missing required config');
+        console.warn(
+          '⚠️  Skipping XSUAA session load test - missing required config',
+        );
         return;
       }
 
-      const store = new XsuaaSessionStore(sessionsDir, xsuaaDestinations.mcp_url || 'https://default.mcp.com');
+      const store = new XsuaaSessionStore(
+        sessionsDir,
+        xsuaaDestinations.mcp_url || 'https://default.mcp.com',
+      );
 
-      const session = await store.loadSession(xsuaaDestinations.btp_destination);
-      
+      const session = await store.loadSession(
+        xsuaaDestinations.btp_destination,
+      );
+
       // Session may not exist, but store should not throw error
       expect(session).toBeDefined();
     }, 10000);
 
     it('should save and load XSUAA session', async () => {
       if (!hasRealXsuaaConfig) {
-        console.warn('⚠️  Skipping XSUAA session save/load test - no real config');
+        console.warn(
+          '⚠️  Skipping XSUAA session save/load test - no real config',
+        );
         return;
       }
 
       if (!xsuaaDestinations.btp_destination || !sessionsDir) {
-        console.warn('⚠️  Skipping XSUAA session save/load test - missing required config');
+        console.warn(
+          '⚠️  Skipping XSUAA session save/load test - missing required config',
+        );
         return;
       }
 
-      const store = new XsuaaSessionStore(sessionsDir, xsuaaDestinations.mcp_url || 'https://default.mcp.com');
+      const store = new XsuaaSessionStore(
+        sessionsDir,
+        xsuaaDestinations.mcp_url || 'https://default.mcp.com',
+      );
 
       // Create test session config
       const testSession: IConfig = {
@@ -65,14 +79,18 @@ describe('XsuaaSessionStore Integration', () => {
       await store.saveSession(xsuaaDestinations.btp_destination, testSession);
 
       // Load session
-      const loadedSession = await store.loadSession(xsuaaDestinations.btp_destination);
-      
+      const loadedSession = await store.loadSession(
+        xsuaaDestinations.btp_destination,
+      );
+
       expect(loadedSession).toBeDefined();
       expect(loadedSession).not.toBeNull();
-      
+
       if (loadedSession) {
         expect(loadedSession.serviceUrl).toBe(testSession.serviceUrl);
-        expect(loadedSession.authorizationToken).toBe(testSession.authorizationToken);
+        expect(loadedSession.authorizationToken).toBe(
+          testSession.authorizationToken,
+        );
         expect(loadedSession.refreshToken).toBe(testSession.refreshToken);
         expect(loadedSession.uaaUrl).toBe(testSession.uaaUrl);
         expect(loadedSession.uaaClientId).toBe(testSession.uaaClientId);
@@ -85,19 +103,28 @@ describe('XsuaaSessionStore Integration', () => {
 
     it('should get authorization config from real session', async () => {
       if (!hasRealXsuaaConfig) {
-        console.warn('⚠️  Skipping XSUAA authorization config test - no real config');
+        console.warn(
+          '⚠️  Skipping XSUAA authorization config test - no real config',
+        );
         return;
       }
 
       if (!xsuaaDestinations.btp_destination || !sessionsDir) {
-        console.warn('⚠️  Skipping XSUAA authorization config test - missing required config');
+        console.warn(
+          '⚠️  Skipping XSUAA authorization config test - missing required config',
+        );
         return;
       }
 
-      const store = new XsuaaSessionStore(sessionsDir, xsuaaDestinations.mcp_url || 'https://default.mcp.com');
+      const store = new XsuaaSessionStore(
+        sessionsDir,
+        xsuaaDestinations.mcp_url || 'https://default.mcp.com',
+      );
 
-      const authConfig = await store.getAuthorizationConfig(xsuaaDestinations.btp_destination);
-      
+      const authConfig = await store.getAuthorizationConfig(
+        xsuaaDestinations.btp_destination,
+      );
+
       // May be null if session doesn't exist
       if (authConfig) {
         expect(authConfig.uaaUrl).toBeDefined();
@@ -107,4 +134,3 @@ describe('XsuaaSessionStore Integration', () => {
     }, 10000);
   });
 });
-

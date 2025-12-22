@@ -3,12 +3,15 @@
  * Tests how store behaves when used as in AuthBroker (without saveSession)
  */
 
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import type {
+  IAuthorizationConfig,
+  IConnectionConfig,
+} from '@mcp-abap-adt/interfaces';
 import { AbapSessionStore } from '../../../stores/abap/AbapSessionStore';
-import type { IConnectionConfig, IAuthorizationConfig } from '@mcp-abap-adt/interfaces';
 import { createTestLogger } from '../../helpers/testLogger';
-import * as os from 'os';
-import * as path from 'path';
-import * as fs from 'fs/promises';
 
 describe('AbapSessionStore - Broker Usage', () => {
   let tempDir: string;
@@ -49,14 +52,18 @@ describe('AbapSessionStore - Broker Usage', () => {
       };
 
       await expect(
-        store.setConnectionConfig(testDestination, connConfig)
+        store.setConnectionConfig(testDestination, connConfig),
       ).rejects.toThrow('serviceUrl is required for ABAP sessions');
     });
 
     it('should use defaultServiceUrl from constructor when serviceUrl is not provided', async () => {
       const defaultServiceUrl = 'https://default.sap.com';
-      const storeWithDefault = new AbapSessionStore(tempDir, createTestLogger(), defaultServiceUrl);
-      
+      const storeWithDefault = new AbapSessionStore(
+        tempDir,
+        createTestLogger(),
+        defaultServiceUrl,
+      );
+
       const connConfig: IConnectionConfig = {
         authorizationToken: 'test-jwt-token',
         // serviceUrl not provided
@@ -64,7 +71,8 @@ describe('AbapSessionStore - Broker Usage', () => {
 
       await storeWithDefault.setConnectionConfig(testDestination, connConfig);
 
-      const loaded = await storeWithDefault.getConnectionConfig(testDestination);
+      const loaded =
+        await storeWithDefault.getConnectionConfig(testDestination);
       expect(loaded).toBeDefined();
       expect(loaded?.serviceUrl).toBe(defaultServiceUrl);
       expect(loaded?.authorizationToken).toBe(connConfig.authorizationToken);
@@ -73,8 +81,12 @@ describe('AbapSessionStore - Broker Usage', () => {
     it('should prefer config.serviceUrl over defaultServiceUrl', async () => {
       const defaultServiceUrl = 'https://default.sap.com';
       const configServiceUrl = 'https://config.sap.com';
-      const storeWithDefault = new AbapSessionStore(tempDir, createTestLogger(), defaultServiceUrl);
-      
+      const storeWithDefault = new AbapSessionStore(
+        tempDir,
+        createTestLogger(),
+        defaultServiceUrl,
+      );
+
       const connConfig: IConnectionConfig = {
         serviceUrl: configServiceUrl,
         authorizationToken: 'test-jwt-token',
@@ -82,7 +94,8 @@ describe('AbapSessionStore - Broker Usage', () => {
 
       await storeWithDefault.setConnectionConfig(testDestination, connConfig);
 
-      const loaded = await storeWithDefault.getConnectionConfig(testDestination);
+      const loaded =
+        await storeWithDefault.getConnectionConfig(testDestination);
       expect(loaded?.serviceUrl).toBe(configServiceUrl); // Should use config, not default
     });
   });
@@ -115,7 +128,9 @@ describe('AbapSessionStore - Broker Usage', () => {
       // Connection config should still be available
       const loadedConn = await store.getConnectionConfig(testDestination);
       expect(loadedConn?.serviceUrl).toBe(connConfig.serviceUrl);
-      expect(loadedConn?.authorizationToken).toBe(connConfig.authorizationToken);
+      expect(loadedConn?.authorizationToken).toBe(
+        connConfig.authorizationToken,
+      );
     });
 
     it('should throw error if calling setAuthorizationConfig without serviceUrl', async () => {
@@ -126,14 +141,18 @@ describe('AbapSessionStore - Broker Usage', () => {
       };
 
       await expect(
-        store.setAuthorizationConfig(testDestination, authConfig)
+        store.setAuthorizationConfig(testDestination, authConfig),
       ).rejects.toThrow('serviceUrl is required for ABAP sessions');
     });
 
     it('should use defaultServiceUrl when calling setAuthorizationConfig without existing session', async () => {
       const defaultServiceUrl = 'https://default.sap.com';
-      const storeWithDefault = new AbapSessionStore(tempDir, createTestLogger(), defaultServiceUrl);
-      
+      const storeWithDefault = new AbapSessionStore(
+        tempDir,
+        createTestLogger(),
+        defaultServiceUrl,
+      );
+
       const authConfig: IAuthorizationConfig = {
         uaaUrl: 'https://test.uaa.com',
         uaaClientId: 'test-client-id',
@@ -141,7 +160,10 @@ describe('AbapSessionStore - Broker Usage', () => {
         refreshToken: 'test-refresh-token',
       };
 
-      await storeWithDefault.setAuthorizationConfig(testDestination, authConfig);
+      await storeWithDefault.setAuthorizationConfig(
+        testDestination,
+        authConfig,
+      );
 
       // Use loadSession to verify full session was created
       const fullSession = await storeWithDefault.loadSession(testDestination);
@@ -153,7 +175,8 @@ describe('AbapSessionStore - Broker Usage', () => {
       expect(fullSession?.refreshToken).toBe(authConfig.refreshToken);
 
       // getAuthorizationConfig should work
-      const loadedAuth = await storeWithDefault.getAuthorizationConfig(testDestination);
+      const loadedAuth =
+        await storeWithDefault.getAuthorizationConfig(testDestination);
       expect(loadedAuth).toBeDefined();
       expect(loadedAuth?.uaaUrl).toBe(authConfig.uaaUrl);
     });
@@ -235,7 +258,9 @@ describe('AbapSessionStore - Broker Usage', () => {
       const fullSession = await store.loadSession(testDestination);
       expect(fullSession).toBeDefined();
       expect(fullSession?.serviceUrl).toBe(connConfig.serviceUrl);
-      expect(fullSession?.authorizationToken).toBe(connConfig.authorizationToken);
+      expect(fullSession?.authorizationToken).toBe(
+        connConfig.authorizationToken,
+      );
       expect(fullSession?.uaaUrl).toBe(authConfig.uaaUrl);
       expect(fullSession?.refreshToken).toBe(authConfig.refreshToken);
     });
@@ -262,7 +287,7 @@ describe('AbapSessionStore - Broker Usage', () => {
       // Verify new token is stored
       const connConfig = await store.getConnectionConfig(testDestination);
       expect(connConfig?.authorizationToken).toBe('token2');
-      
+
       // Authorization config should still be available
       const authConfig = await store.getAuthorizationConfig(testDestination);
       expect(authConfig?.refreshToken).toBe('refresh1');

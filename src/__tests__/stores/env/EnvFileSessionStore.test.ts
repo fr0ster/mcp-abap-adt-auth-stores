@@ -3,9 +3,9 @@
  * Tests reading .env files and in-memory token updates
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { EnvFileSessionStore } from '../../../stores/env/EnvFileSessionStore';
 import { createTestLogger } from '../../helpers/testLogger';
 
@@ -100,7 +100,9 @@ SAP_UAA_CLIENT_SECRET=client-secret
       expect(config).toBeDefined();
       expect(config?.serviceUrl).toBe('https://test.sap.com');
       expect(config?.authType).toBe('jwt');
-      expect(config?.authorizationToken).toBe('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test');
+      expect(config?.authorizationToken).toBe(
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test',
+      );
 
       const authConfig = await store.getAuthorizationConfig('default');
       expect(authConfig).toBeDefined();
@@ -140,7 +142,10 @@ SAP_PASSWORD=testpass
     });
 
     it('should fail if .env file does not exist', async () => {
-      store = new EnvFileSessionStore('/non/existent/path/.env', createTestLogger());
+      store = new EnvFileSessionStore(
+        '/non/existent/path/.env',
+        createTestLogger(),
+      );
 
       const config = await store.getConnectionConfig('default');
       expect(config).toBeNull();

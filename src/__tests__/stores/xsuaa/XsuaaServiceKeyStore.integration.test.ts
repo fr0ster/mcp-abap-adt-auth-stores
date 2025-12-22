@@ -5,10 +5,10 @@
 
 import { XsuaaServiceKeyStore } from '../../../stores/xsuaa/XsuaaServiceKeyStore';
 import {
-  loadTestConfig,
-  hasRealConfig,
-  getXsuaaDestinations,
   getServiceKeysDir,
+  getXsuaaDestinations,
+  hasRealConfig,
+  loadTestConfig,
 } from '../../helpers/configHelpers';
 
 describe('XsuaaServiceKeyStore Integration', () => {
@@ -25,17 +25,21 @@ describe('XsuaaServiceKeyStore Integration', () => {
       }
 
       if (!xsuaaDestinations.btp_destination || !serviceKeysDir) {
-        console.warn('⚠️  Skipping XSUAA integration test - missing required config');
+        console.warn(
+          '⚠️  Skipping XSUAA integration test - missing required config',
+        );
         return;
       }
 
       const store = new XsuaaServiceKeyStore(serviceKeysDir);
 
-      const serviceKey = await store.getServiceKey(xsuaaDestinations.btp_destination);
-      
+      const serviceKey = await store.getServiceKey(
+        xsuaaDestinations.btp_destination,
+      );
+
       expect(serviceKey).toBeDefined();
       expect(serviceKey).not.toBeNull();
-      
+
       if (serviceKey) {
         expect(serviceKey.uaaUrl).toBeDefined();
         expect(serviceKey.uaaClientId).toBeDefined();
@@ -45,22 +49,28 @@ describe('XsuaaServiceKeyStore Integration', () => {
 
     it('should get authorization config from real XSUAA service key', async () => {
       if (!hasRealXsuaaConfig) {
-        console.warn('⚠️  Skipping XSUAA authorization config test - no real config');
+        console.warn(
+          '⚠️  Skipping XSUAA authorization config test - no real config',
+        );
         return;
       }
 
       if (!xsuaaDestinations.btp_destination || !serviceKeysDir) {
-        console.warn('⚠️  Skipping XSUAA authorization config test - missing required config');
+        console.warn(
+          '⚠️  Skipping XSUAA authorization config test - missing required config',
+        );
         return;
       }
 
       const store = new XsuaaServiceKeyStore(serviceKeysDir);
 
-      const authConfig = await store.getAuthorizationConfig(xsuaaDestinations.btp_destination);
-      
+      const authConfig = await store.getAuthorizationConfig(
+        xsuaaDestinations.btp_destination,
+      );
+
       expect(authConfig).toBeDefined();
       expect(authConfig).not.toBeNull();
-      
+
       if (authConfig) {
         expect(authConfig.uaaUrl).toBeDefined();
         expect(authConfig.uaaUrl?.length).toBeGreaterThan(0);
@@ -72,4 +82,3 @@ describe('XsuaaServiceKeyStore Integration', () => {
     }, 10000);
   });
 });
-

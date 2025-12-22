@@ -2,8 +2,6 @@
  * Test logger with environment variable control
  */
 
-
-
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 function getLogLevel(): LogLevel {
@@ -26,9 +24,11 @@ export function createTestLogger(prefix: string = 'TEST'): ILogger {
       return false;
     }
     // Explicitly enabled
-    if (process.env.DEBUG_AUTH_STORES === 'true' || 
-        process.env.DEBUG === 'true' ||
-        process.env.DEBUG?.includes('auth-stores') === true) {
+    if (
+      process.env.DEBUG_AUTH_STORES === 'true' ||
+      process.env.DEBUG === 'true' ||
+      process.env.DEBUG?.includes('auth-stores') === true
+    ) {
       return true;
     }
     // Do not enable by default - require explicit enable

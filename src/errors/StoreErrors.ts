@@ -2,7 +2,10 @@
  * Store error codes and typed error classes
  */
 
-import { STORE_ERROR_CODES, type StoreErrorCode } from '@mcp-abap-adt/interfaces';
+import {
+  STORE_ERROR_CODES,
+  type StoreErrorCode,
+} from '@mcp-abap-adt/interfaces';
 
 /**
  * Base error class for all store errors
@@ -27,7 +30,7 @@ export class FileNotFoundError extends StoreError {
   constructor(filePath: string, message?: string) {
     super(
       message || `File not found: ${filePath}`,
-      STORE_ERROR_CODES.FILE_NOT_FOUND
+      STORE_ERROR_CODES.FILE_NOT_FOUND,
     );
     this.name = 'FileNotFoundError';
     this.filePath = filePath;

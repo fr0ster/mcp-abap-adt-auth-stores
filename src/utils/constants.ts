@@ -91,4 +91,3 @@ export const BTP_CONNECTION_VARS = {
   /** Language (optional) */
   SAP_LANGUAGE: 'BTP_LANGUAGE',
 } as const;
-

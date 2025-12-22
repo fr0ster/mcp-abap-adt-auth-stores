@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.9] - 2025-12-22
+
+### Changed
+- **Migrated to Biome**: Replaced ESLint/Prettier with Biome for linting and formatting
+  - Added `@biomejs/biome` as dev dependency (^2.3.10)
+  - Added `biome.json` configuration file with recommended rules
+  - Added npm scripts: `lint`, `lint:check`, `format`
+  - Updated `build` script to include Biome check before TypeScript compilation
+  - All code now follows Biome formatting and linting rules
+  - Updated Node.js imports to use `node:` protocol (fs, path, os)
+
+### Fixed
+- **Type Safety Improvements**: Replaced `any` types with `unknown` for better type safety
+  - Parser methods (`canParse`, `parse`): Changed parameter types from `any` to `unknown` with proper type guards
+  - `AbapSessionStore`: Replaced `as any` casts with proper type intersections (`IConfig & Record<string, unknown>`)
+  - All parsers now use proper type guards to safely access object properties
+- **Code Quality**: Improved code organization
+  - Organized imports automatically
+  - Fixed code formatting issues
+  - Improved type safety in session store operations
+
 ## [0.2.8] - 2025-12-21
 
 ### Added
