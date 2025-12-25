@@ -9,6 +9,7 @@ import {
   XSUAA_AUTHORIZATION_VARS,
   XSUAA_CONNECTION_VARS,
 } from '../../utils/constants';
+import { formatToken } from '../../utils/formatting';
 
 // Internal type for XSUAA session storage
 interface XsuaaSessionConfig {
@@ -36,8 +37,10 @@ export async function saveXsuaaTokenToEnv(
   const envFilePath = path.join(savePath, `${destination}.env`);
   const tempFilePath = `${envFilePath}.tmp`;
   log?.debug(`Saving XSUAA token to env file: ${envFilePath}`);
+  const formattedToken = formatToken(config.jwtToken);
+  const formattedRefreshToken = formatToken(config.refreshToken);
   log?.debug(
-    `Config to save: token(${config.jwtToken.length} chars), hasRefreshToken(${!!config.refreshToken}), hasUaaUrl(${!!config.uaaUrl}), mcpUrl(${config.mcpUrl ? `${config.mcpUrl.substring(0, 50)}...` : 'none'})`,
+    `Config to save: token(${config.jwtToken.length} chars${formattedToken ? `, ${formattedToken}` : ''}), refreshToken(${formattedRefreshToken || 'none'}), hasUaaUrl(${!!config.uaaUrl}), mcpUrl(${config.mcpUrl ? `${config.mcpUrl.substring(0, 50)}...` : 'none'})`,
   );
 
   // Ensure directory exists
@@ -149,6 +152,6 @@ export async function saveXsuaaTokenToEnv(
   // Atomic rename
   fs.renameSync(tempFilePath, envFilePath);
   log?.info(
-    `XSUAA token saved to ${envFilePath}: token(${config.jwtToken.length} chars), mcpUrl(${config.mcpUrl ? `${config.mcpUrl.substring(0, 50)}...` : 'none'}), variables(${envLines.length})`,
+    `XSUAA token saved to ${envFilePath}: token(${config.jwtToken.length} chars${formattedToken ? `, ${formattedToken}` : ''}), refreshToken(${formattedRefreshToken || 'none'}), mcpUrl(${config.mcpUrl ? `${config.mcpUrl.substring(0, 50)}...` : 'none'}), variables(${envLines.length})`,
   );
 }

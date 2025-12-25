@@ -9,6 +9,7 @@ import {
   ABAP_AUTHORIZATION_VARS,
   ABAP_CONNECTION_VARS,
 } from '../../utils/constants';
+import { formatToken } from '../../utils/formatting';
 
 // Internal type for ABAP environment configuration (same as in envLoader.ts)
 interface EnvConfig {
@@ -43,8 +44,10 @@ export async function saveTokenToEnv(
   log?.debug(`Saving token to env file: ${envFilePath}`);
   const tokenLength = config.jwtToken?.length || 0;
   const hasBasicAuth = !!(config.username && config.password);
+  const formattedToken = formatToken(config.jwtToken);
+  const formattedRefreshToken = formatToken(config.refreshToken);
   log?.debug(
-    `Config to save: hasSapUrl(${!!config.sapUrl}), token(${tokenLength} chars), hasBasicAuth(${hasBasicAuth}), hasRefreshToken(${!!config.refreshToken}), hasUaaUrl(${!!config.uaaUrl})`,
+    `Config to save: hasSapUrl(${!!config.sapUrl}), token(${tokenLength} chars${formattedToken ? `, ${formattedToken}` : ''}), hasBasicAuth(${hasBasicAuth}), refreshToken(${formattedRefreshToken || 'none'}), hasUaaUrl(${!!config.uaaUrl})`,
   );
 
   // Ensure directory exists
@@ -159,7 +162,7 @@ export async function saveTokenToEnv(
   fs.renameSync(tempFilePath, envFilePath);
   const authInfo = hasBasicAuth
     ? `basic auth (username: ${config.username})`
-    : `JWT token(${tokenLength} chars)`;
+    : `JWT token(${tokenLength} chars${formattedToken ? `, ${formattedToken}` : ''})`;
   log?.info(
     `Token saved to ${envFilePath}: ${authInfo}, sapUrl(${config.sapUrl ? `${config.sapUrl.substring(0, 50)}...` : 'none'}), variables(${envLines.length})`,
   );

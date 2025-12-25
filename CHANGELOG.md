@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.10] - 2025-12-25
+
+### Changed
+- **Logging Improvements**: Enhanced logging for better debugging and readability
+  - **Token Formatting**: Tokens are now logged in truncated format (start...end) instead of just length
+    - Example: `token(2263 chars, eyJ0eXAiOiJKV1QiLCJqaWQiO...Q5ti7aYmEzItIDuLp7axNYo6w)`
+    - Applied to all stores: `AbapSessionStore`, `XsuaaSessionStore`, `SafeAbapSessionStore`, `SafeXsuaaSessionStore`
+    - Applied to storage functions: `tokenStorage.ts`, `xsuaaTokenStorage.ts`
+  - **Structured Logging**: Replaced `console.log/info/warn/error` with `DefaultLogger` from `@mcp-abap-adt/logger`
+    - Proper formatting with icons and level prefixes (ℹ️, 🐛, ⚠️, ❌)
+    - Respects `LOG_LEVEL` or `AUTH_LOG_LEVEL` environment variable
+    - Consistent logging format across all packages
+  - **Environment Variable Names**: Added short names for debug flags (backward compatible)
+    - `DEBUG_STORES=true` (short) or `DEBUG_AUTH_STORES=true` (long)
+    - Both names are supported for backward compatibility
+
+### Added
+- **Formatting Utilities**: Added `formatting.ts` utility module
+  - `formatToken()` - Formats tokens as `start...end` for secure logging
+  - `formatExpirationDate()` - Formats timestamps to readable date/time format (ready for future use)
+- **Logger Package Dependency**: Added `@mcp-abap-adt/logger` to devDependencies
+  - Required for `DefaultLogger` and `getLogLevel()` utilities
+  - Added `pino` and `pino-pretty` to devDependencies to support PinoLogger initialization
+
 ## [0.2.9] - 2025-12-22
 
 ### Changed

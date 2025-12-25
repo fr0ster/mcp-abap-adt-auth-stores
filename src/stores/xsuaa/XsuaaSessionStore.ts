@@ -16,6 +16,7 @@ import type {
 } from '@mcp-abap-adt/interfaces';
 import { loadXsuaaEnvFile } from '../../storage/xsuaa/xsuaaEnvLoader';
 import { saveXsuaaTokenToEnv } from '../../storage/xsuaa/xsuaaTokenStorage';
+import { formatToken } from '../../utils/formatting';
 
 // Internal type for XSUAA session storage (same as base BTP, without sapUrl)
 interface XsuaaSessionData {
@@ -167,13 +168,15 @@ export class XsuaaSessionStore implements ISessionStore {
     // Convert IConfig to internal format for ENV file
     const internalConfig = this.convertToInternalFormat(config);
     const obj = config as Record<string, unknown>;
-    const tokenLength =
-      obj.authorizationToken || obj.jwtToken
-        ? String(obj.authorizationToken || obj.jwtToken).length
-        : 0;
+    const token = obj.authorizationToken || obj.jwtToken;
+    const tokenLength = token ? String(token).length : 0;
+    const formattedToken = formatToken(String(token || ''));
+    const formattedRefreshToken = formatToken(
+      typeof obj.refreshToken === 'string' ? obj.refreshToken : undefined,
+    );
     const hasRefreshToken = !!obj.refreshToken;
     this.log?.info(
-      `Session saved for ${destination}: token(${tokenLength} chars), hasRefreshToken(${hasRefreshToken}), serviceUrl(${obj.serviceUrl || obj.mcpUrl ? `${String(obj.serviceUrl || obj.mcpUrl).substring(0, 40)}...` : 'none'})`,
+      `Session saved for ${destination}: token(${tokenLength} chars${formattedToken ? `, ${formattedToken}` : ''}), refreshToken(${formattedRefreshToken || 'none'}), serviceUrl(${obj.serviceUrl || obj.mcpUrl ? `${String(obj.serviceUrl || obj.mcpUrl).substring(0, 40)}...` : 'none'})`,
     );
     await this.saveToFile(filePath, internalConfig);
   }
@@ -213,9 +216,11 @@ export class XsuaaSessionStore implements ISessionStore {
     }
 
     const tokenLength = connConfig?.authorizationToken?.length || 0;
+    const formattedToken = formatToken(connConfig?.authorizationToken);
+    const formattedRefreshToken = formatToken(authConfig?.refreshToken);
     const hasRefreshToken = !!authConfig?.refreshToken;
     this.log?.info(
-      `Session loaded for ${destination}: token(${tokenLength} chars), hasRefreshToken(${hasRefreshToken}), serviceUrl(${connConfig?.serviceUrl ? `${connConfig.serviceUrl.substring(0, 40)}...` : 'none'})`,
+      `Session loaded for ${destination}: token(${tokenLength} chars${formattedToken ? `, ${formattedToken}` : ''}), refreshToken(${formattedRefreshToken || 'none'}), serviceUrl(${connConfig?.serviceUrl ? `${connConfig.serviceUrl.substring(0, 40)}...` : 'none'})`,
     );
     return {
       ...(authConfig || {}),
@@ -275,7 +280,7 @@ export class XsuaaSessionStore implements ISessionStore {
     }
 
     this.log?.debug(
-      `Connection config loaded for ${destination}: token(${sessionConfig.jwtToken.length} chars), serviceUrl(${sessionConfig.mcpUrl ? `${sessionConfig.mcpUrl.substring(0, 40)}...` : 'none'})`,
+      `Connection config loaded for ${destination}: token(${sessionConfig.jwtToken.length} chars${formatToken(sessionConfig.jwtToken) ? `, ${formatToken(sessionConfig.jwtToken)}` : ''}), serviceUrl(${sessionConfig.mcpUrl ? `${sessionConfig.mcpUrl.substring(0, 40)}...` : 'none'})`,
     );
     return {
       serviceUrl: sessionConfig.mcpUrl, // May be undefined for XSUAA
@@ -294,7 +299,7 @@ export class XsuaaSessionStore implements ISessionStore {
       // For XSUAA, use config.serviceUrl if provided, otherwise use defaultServiceUrl (required)
       const serviceUrl = config.serviceUrl || this.defaultServiceUrl;
       this.log?.debug(
-        `Creating new session for ${destination} via setConnectionConfig: mcpUrl(${serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars)`,
+        `Creating new session for ${destination} via setConnectionConfig: mcpUrl(${serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars${formatToken(config.authorizationToken) ? `, ${formatToken(config.authorizationToken)}` : ''})`,
       );
 
       const newSession: XsuaaSessionData = {
@@ -303,14 +308,14 @@ export class XsuaaSessionStore implements ISessionStore {
       };
       await this.saveSession(destination, newSession);
       this.log?.info(
-        `Session created for ${destination}: mcpUrl(${serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars)`,
+        `Session created for ${destination}: mcpUrl(${serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars${formatToken(config.authorizationToken) ? `, ${formatToken(config.authorizationToken)}` : ''})`,
       );
       return;
     }
 
     // Update connection fields
     this.log?.debug(
-      `Updating connection config for existing session ${destination}: serviceUrl(${config.serviceUrl ? `${config.serviceUrl.substring(0, 40)}...` : 'unchanged'}), token(${config.authorizationToken?.length || 0} chars)`,
+      `Updating connection config for existing session ${destination}: serviceUrl(${config.serviceUrl ? `${config.serviceUrl.substring(0, 40)}...` : 'unchanged'}), token(${config.authorizationToken?.length || 0} chars${formatToken(config.authorizationToken) ? `, ${formatToken(config.authorizationToken)}` : ''})`,
     );
     const updated: XsuaaSessionData = {
       ...current,
@@ -324,7 +329,7 @@ export class XsuaaSessionStore implements ISessionStore {
 
     await this.saveSession(destination, updated);
     this.log?.info(
-      `Connection config updated for ${destination}: serviceUrl(${updated.mcpUrl ? `${updated.mcpUrl.substring(0, 40)}...` : 'none'}), token(${config.authorizationToken?.length || 0} chars)`,
+      `Connection config updated for ${destination}: serviceUrl(${updated.mcpUrl ? `${updated.mcpUrl.substring(0, 40)}...` : 'none'}), token(${config.authorizationToken?.length || 0} chars${formatToken(config.authorizationToken) ? `, ${formatToken(config.authorizationToken)}` : ''})`,
     );
   }
 

@@ -397,32 +397,47 @@ const store = new AbapServiceKeyStore('/path/to/service-keys', logger);
 To enable logging in tests or when using `createTestLogger`:
 
 ```bash
-# Enable logging for auth stores
+# Enable logging for auth stores (short name)
+DEBUG_STORES=true npm test
+
+# Or use long name (backward compatibility)
 DEBUG_AUTH_STORES=true npm test
 
 # Or enable via general DEBUG variable
 DEBUG=true npm test
 
 # Or include in DEBUG list
+DEBUG=stores npm test
+# Or
 DEBUG=auth-stores npm test
 
 # Set log level (debug, info, warn, error)
 LOG_LEVEL=debug npm test
 ```
 
-**Note**: Logging is enabled by default in test environment (`NODE_ENV === 'test'`). To disable, set `DEBUG_AUTH_STORES=false`.
+**Note**: Logging requires explicit enable via environment variables. Both `DEBUG_STORES` (short) and `DEBUG_AUTH_STORES` (long) are supported for backward compatibility.
 
 Logging shows:
 - **File operations**: Which files are read/written, file sizes, file paths
 - **Parsing operations**: Structure of parsed data, validation results, keys found
 - **Storage operations**: What data is saved/loaded, token lengths, refresh token presence, URLs
+- **Token formatting**: Tokens are logged in truncated format (start...end) for security and readability
 - **Errors**: Detailed error information with context
 
-Example output with `LOG_LEVEL=debug`:
+**Logging Features**:
+- **Token Formatting**: Tokens are logged in truncated format (start...end) for security
+- **Structured Logging**: Uses `DefaultLogger` from `@mcp-abap-adt/logger` for proper formatting with icons and level prefixes
+- **Log Levels**: Controlled via `LOG_LEVEL` or `AUTH_LOG_LEVEL` environment variable (error, warn, info, debug)
+
+Example output with `DEBUG_STORES=true LOG_LEVEL=debug`:
 ```
-[TEST-STORE] [DEBUG] Reading service key file: /path/to/TRIAL.json
-[TEST-STORE] [DEBUG] File read successfully, size: 121 bytes, keys: uaa
-[TEST-STORE] [DEBUG] Parsed service key structure: hasUaa(true), uaaKeys(url, clientid, clientsecret)
+[INFO] ℹ️ [TEST-STORE] Reading service key file: /path/to/TRIAL.json
+[DEBUG] 🐛 [TEST-STORE] File read successfully, size: 121 bytes, keys: uaa
+[DEBUG] 🐛 [TEST-STORE] Parsed service key structure: hasUaa(true), uaaKeys(url, clientid, clientsecret)
+[INFO] ℹ️ [TEST-STORE] Authorization config loaded from /path/to/TRIAL.json: uaaUrl(https://...authentication...), clientId(test-client...)
+[DEBUG] 🐛 [TEST-STORE] Reading env file: /path/to/TRIAL.env
+[DEBUG] 🐛 [TEST-STORE] Env file read successfully, size: 245 bytes
+[INFO] ℹ️ [TEST-STORE] Session loaded for TRIAL: token(2263 chars, eyJ0eXAiOiJKV1QiLCJqaWQiO...Q5ti7aYmEzItIDuLp7axNYo6w), refreshToken(fcc971e1cf1548629216a96b0680eb85-r), sapUrl(https://...abap...)
 [TEST-STORE] Authorization config loaded from /path/to/TRIAL.json: uaaUrl(https://...authentication...), clientId(test-client...)
 [TEST-STORE] [DEBUG] Reading env file: /path/to/TRIAL.env
 [TEST-STORE] [DEBUG] Env file read successfully, size: 245 bytes
