@@ -438,10 +438,6 @@ Example output with `DEBUG_STORES=true LOG_LEVEL=debug`:
 [DEBUG] 🐛 [TEST-STORE] Reading env file: /path/to/TRIAL.env
 [DEBUG] 🐛 [TEST-STORE] Env file read successfully, size: 245 bytes
 [INFO] ℹ️ [TEST-STORE] Session loaded for TRIAL: token(2263 chars, eyJ0eXAiOiJKV1QiLCJqaWQiO...Q5ti7aYmEzItIDuLp7axNYo6w), refreshToken(fcc971e1cf1548629216a96b0680eb85-r), sapUrl(https://...abap...)
-[TEST-STORE] Authorization config loaded from /path/to/TRIAL.json: uaaUrl(https://...authentication...), clientId(test-client...)
-[TEST-STORE] [DEBUG] Reading env file: /path/to/TRIAL.env
-[TEST-STORE] [DEBUG] Env file read successfully, size: 245 bytes
-[TEST-STORE] Session loaded for TRIAL: token(2263 chars), hasRefreshToken(true), sapUrl(https://...abap...)
 ```
 
 **Note**: Logging only works when a logger is explicitly provided. Stores will not output anything to console if no logger is passed.
