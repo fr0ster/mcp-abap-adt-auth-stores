@@ -9,18 +9,18 @@ import type {
   ILogger,
   IServiceKeyStore,
 } from '@mcp-abap-adt/interfaces';
-import { ParseError } from '../../errors/StoreErrors';
-import { XsuaaServiceKeyParser } from '../../parsers/xsuaa/XsuaaServiceKeyParser';
 import { JsonFileHandler } from '../../utils/JsonFileHandler';
 
 /**
  * XSUAA Service key store implementation
  *
- * Uses JsonFileHandler for file operations and XsuaaServiceKeyParser for parsing.
+ * Reads XSUAA service keys from JSON files. Supports:
+ * - Flat format: { clientid, clientsecret, url }
+ * - With credentials wrapper: { credentials: { clientid, clientsecret, url } }
+ * - Nested uaa format: { uaa: { clientid, clientsecret, url } }
  */
 export class XsuaaServiceKeyStore implements IServiceKeyStore {
   private directory: string;
-  private parser: XsuaaServiceKeyParser;
   private log?: ILogger;
 
   /**
@@ -30,7 +30,6 @@ export class XsuaaServiceKeyStore implements IServiceKeyStore {
    */
   constructor(directory: string, log?: ILogger) {
     this.directory = directory;
-    this.parser = new XsuaaServiceKeyParser(log);
     this.log = log;
   }
 
@@ -73,46 +72,44 @@ export class XsuaaServiceKeyStore implements IServiceKeyStore {
       return null;
     }
 
-    try {
-      const parsed = this.parser.parse(rawData);
-      if (!parsed || typeof parsed !== 'object') {
-        this.log?.warn(
-          `Failed to parse service key for ${destination}: invalid format`,
-        );
-        return null;
-      }
-      const key = parsed as {
-        uaa?: { url?: string; clientid?: string; clientsecret?: string };
-      };
-      if (
-        !key.uaa ||
-        !key.uaa.url ||
-        !key.uaa.clientid ||
-        !key.uaa.clientsecret
-      ) {
-        this.log?.warn(
-          `Service key for ${destination} missing required UAA fields`,
-        );
-        return null;
-      }
-      this.log?.info(
-        `Authorization config loaded for ${destination}: uaaUrl(${key.uaa.url.substring(0, 30)}...)`,
+    if (!rawData || typeof rawData !== 'object') {
+      this.log?.warn(
+        `Failed to parse service key for ${destination}: invalid format`,
       );
-      return {
-        uaaUrl: key.uaa.url,
-        uaaClientId: key.uaa.clientid,
-        uaaClientSecret: key.uaa.clientsecret,
-      };
-    } catch (error) {
-      this.log?.error(
-        `Failed to parse service key for ${destination}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      throw new ParseError(
-        `Failed to parse service key for destination "${destination}"`,
-        `${destination}.json`,
-        error instanceof Error ? error : undefined,
-      );
+      return null;
     }
+
+    let data = rawData as Record<string, unknown>;
+
+    // Unwrap credentials wrapper if present
+    // Format: { credentials: { clientid, clientsecret, url, ... } }
+    if (data.credentials && typeof data.credentials === 'object') {
+      data = data.credentials as Record<string, unknown>;
+    }
+
+    // Support both flat XSUAA format and nested uaa format
+    // Flat: { clientid, clientsecret, url }
+    // Nested: { uaa: { clientid, clientsecret, url } }
+    const uaa = (data.uaa as Record<string, unknown>) || data;
+    const uaaUrl = uaa.url as string | undefined;
+    const uaaClientId = uaa.clientid as string | undefined;
+    const uaaClientSecret = uaa.clientsecret as string | undefined;
+
+    if (!uaaUrl || !uaaClientId || !uaaClientSecret) {
+      this.log?.warn(
+        `Service key for ${destination} missing required fields (url, clientid, clientsecret)`,
+      );
+      return null;
+    }
+
+    this.log?.info(
+      `Authorization config loaded for ${destination}: uaaUrl(${uaaUrl.substring(0, 30)}...)`,
+    );
+    return {
+      uaaUrl,
+      uaaClientId,
+      uaaClientSecret,
+    };
   }
 
   /**
@@ -135,45 +132,41 @@ export class XsuaaServiceKeyStore implements IServiceKeyStore {
       return null;
     }
 
-    try {
-      const parsed = this.parser.parse(rawData);
-      if (!parsed || typeof parsed !== 'object') {
-        this.log?.warn(
-          `Failed to parse service key for ${destination}: invalid format`,
-        );
-        return null;
-      }
-      const key = parsed as {
-        abap?: { url?: string; client?: string; language?: string };
-        sap_url?: string;
-        url?: string;
-        sap_client?: string;
-        client?: string;
-        language?: string;
-      };
-      // Service key doesn't have tokens - only URLs and client info
-      const serviceUrl =
-        key.abap?.url ||
-        key.sap_url ||
-        (key.url && !key.url.includes('authentication') ? key.url : undefined);
-      this.log?.info(
-        `Connection config loaded for ${destination}: serviceUrl(${serviceUrl ? `${serviceUrl.substring(0, 40)}...` : 'none'}), client(${key.abap?.client || key.sap_client || key.client || 'none'})`,
+    if (!rawData || typeof rawData !== 'object') {
+      this.log?.warn(
+        `Failed to parse service key for ${destination}: invalid format`,
       );
-      return {
-        serviceUrl,
-        authorizationToken: '', // Service key doesn't contain tokens
-        sapClient: key.abap?.client || key.sap_client || key.client,
-        language: key.abap?.language || key.language,
-      };
-    } catch (error) {
-      this.log?.error(
-        `Failed to parse service key for ${destination}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      throw new ParseError(
-        `Failed to parse service key for destination "${destination}"`,
-        `${destination}.json`,
-        error instanceof Error ? error : undefined,
-      );
+      return null;
     }
+
+    let data = rawData as Record<string, unknown>;
+
+    // Unwrap credentials wrapper if present
+    if (data.credentials && typeof data.credentials === 'object') {
+      data = data.credentials as Record<string, unknown>;
+    }
+
+    const abap = data.abap as Record<string, unknown> | undefined;
+
+    // Service key doesn't have tokens - only URLs and client info
+    // serviceUrl is optional for XSUAA (only needed for ABAP)
+    const url = data.url as string | undefined;
+    const serviceUrl =
+      (abap?.url as string | undefined) ||
+      (data.sap_url as string | undefined) ||
+      (url && !url.includes('authentication') ? url : undefined);
+
+    this.log?.info(
+      `Connection config loaded for ${destination}: serviceUrl(${serviceUrl ? `${serviceUrl.substring(0, 40)}...` : 'none'}), client(${abap?.client || data.sap_client || data.client || 'none'})`,
+    );
+
+    return {
+      serviceUrl,
+      authorizationToken: '', // Service key doesn't contain tokens
+      sapClient: (abap?.client || data.sap_client || data.client) as
+        | string
+        | undefined,
+      language: (abap?.language || data.language) as string | undefined,
+    };
   }
 }
