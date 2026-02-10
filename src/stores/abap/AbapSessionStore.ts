@@ -24,9 +24,10 @@ interface AbapSessionData {
   sapUrl: string;
   sapClient?: string;
   jwtToken?: string; // Optional for basic auth
+  sessionCookies?: string; // SAML session cookies (decoded)
   username?: string; // For basic auth (on-premise)
   password?: string; // For basic auth (on-premise)
-  authType?: 'basic' | 'jwt'; // Authentication type
+  authType?: 'basic' | 'jwt' | 'saml'; // Authentication type
   refreshToken?: string;
   uaaUrl?: string;
   uaaClientId?: string;
@@ -96,8 +97,12 @@ export class AbapSessionStore implements ISessionStore {
       language: obj.language as string | undefined,
     };
 
-    // Handle authentication: JWT or basic auth
-    if (obj.username && obj.password) {
+    // Handle authentication: SAML cookies, basic auth, or JWT auth
+    if (obj.sessionCookies) {
+      result.sessionCookies = obj.sessionCookies as string;
+      result.authType = 'saml';
+      result.jwtToken = '';
+    } else if (obj.username && obj.password) {
       // Basic auth
       result.username = obj.username as string;
       result.password = obj.password as string;
@@ -235,6 +240,9 @@ export class AbapSessionStore implements ISessionStore {
     if (rawSession.jwtToken !== undefined) {
       result.authorizationToken = rawSession.jwtToken;
     }
+    if (rawSession.sessionCookies !== undefined) {
+      result.sessionCookies = rawSession.sessionCookies;
+    }
     // Basic auth fields (if present)
     if (rawSession.username) {
       result.username = rawSession.username;
@@ -366,6 +374,27 @@ export class AbapSessionStore implements ISessionStore {
       return null;
     }
 
+    // SAML auth: session cookies
+    if (sessionConfig.authType === 'saml' || sessionConfig.sessionCookies) {
+      if (!sessionConfig.sessionCookies) {
+        this.log?.warn(
+          `Connection config for ${destination} missing required field for SAML auth: sessionCookies`,
+        );
+        return null;
+      }
+
+      this.log?.debug(
+        `Connection config loaded for ${destination} (SAML auth): cookies(${sessionConfig.sessionCookies.length} chars), sapUrl(${sessionConfig.sapUrl.substring(0, 40)}...)`,
+      );
+      return {
+        serviceUrl: sessionConfig.sapUrl,
+        sessionCookies: sessionConfig.sessionCookies,
+        authType: 'saml',
+        sapClient: sessionConfig.sapClient,
+        language: sessionConfig.language,
+      };
+    }
+
     // Check for basic auth: if username/password present and no jwtToken, use basic auth
     const isBasicAuth =
       sessionConfig.authType === 'basic' ||
@@ -434,7 +463,7 @@ export class AbapSessionStore implements ISessionStore {
       let existingAuthToken = '';
       let existingUsername: string | undefined;
       let existingPassword: string | undefined;
-      let existingAuthType: 'basic' | 'jwt' | undefined;
+      let existingAuthType: 'basic' | 'jwt' | 'saml' | undefined;
 
       // Try to load existing session file to get serviceUrl and auth info
       try {
@@ -546,6 +575,7 @@ export class AbapSessionStore implements ISessionStore {
       const newSession: IConfig = {
         serviceUrl: serviceUrl,
         authorizationToken: config.authorizationToken || '',
+        sessionCookies: config.sessionCookies,
         sapClient: config.sapClient,
         language: config.language,
       };
@@ -563,6 +593,10 @@ export class AbapSessionStore implements ISessionStore {
     const updated: IConfig = {
       serviceUrl: config.serviceUrl || current.sapUrl,
       authorizationToken: config.authorizationToken,
+      sessionCookies:
+        config.sessionCookies !== undefined
+          ? config.sessionCookies
+          : current.sessionCookies,
       sapClient:
         config.sapClient !== undefined ? config.sapClient : current.sapClient,
       language:

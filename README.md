@@ -115,7 +115,13 @@ const safeSessionStore = new SafeBtpSessionStore('https://default.mcp.com', logg
 ### ABAP Stores (with sapUrl)
 
 ```typescript
-import { AbapServiceKeyStore, AbapSessionStore, SafeAbapSessionStore } from '@mcp-abap-adt/auth-stores';
+import {
+  AbapServiceKeyStore,
+  AbapSessionStore,
+  SafeAbapSessionStore,
+  SamlSessionStore,
+  SafeSamlSessionStore,
+} from '@mcp-abap-adt/auth-stores';
 
 // Service key store - reads ABAP service keys with nested uaa object
 const serviceKeyStore = new AbapServiceKeyStore('/path/to/service-keys');
@@ -125,6 +131,10 @@ const sessionStore = new AbapSessionStore('/path/to/sessions');
 
 // In-memory session store
 const safeSessionStore = new SafeAbapSessionStore();
+
+// SAML aliases (same behavior as ABAP stores)
+const samlSessionStore = new SamlSessionStore('/path/to/sessions');
+const safeSamlSessionStore = new SafeSamlSessionStore();
 ```
 
 ### XSUAA Stores
@@ -155,7 +165,7 @@ import { EnvFileSessionStore } from '@mcp-abap-adt/auth-stores';
 const store = new EnvFileSessionStore('/path/to/.env', logger);
 
 // Check the auth type from the file
-const authType = store.getAuthType(); // 'basic' | 'jwt' | null
+const authType = store.getAuthType(); // 'basic' | 'jwt' | 'saml' | null
 
 // Load session (works like other session stores)
 const config = await store.loadSession('default');
@@ -174,7 +184,7 @@ console.log(config?.authorizationToken, config?.refreshToken);
 SAP_URL=https://your-sap-system.com
 SAP_CLIENT=100
 
-# Auth type: 'basic' or 'jwt' (defaults to 'basic')
+# Auth type: 'basic', 'jwt', or 'saml' (defaults to 'basic')
 SAP_AUTH_TYPE=basic
 
 # Basic auth credentials
@@ -188,6 +198,10 @@ SAP_PASSWORD=your-password
 # SAP_UAA_URL=https://uaa.example.com
 # SAP_UAA_CLIENT_ID=client-id
 # SAP_UAA_CLIENT_SECRET=client-secret
+
+# OR SAML auth (session cookies, base64-encoded)
+# SAP_AUTH_TYPE=saml
+# SAP_SESSION_COOKIES_B64=base64-encoded-cookie-string
 ```
 
 **Important**: This store is **read-only** for the file. Token updates (e.g., refreshed JWT tokens) are stored in memory only and do not modify the original `.env` file.

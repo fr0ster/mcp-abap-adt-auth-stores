@@ -16,9 +16,10 @@ interface EnvConfig {
   sapUrl: string;
   sapClient?: string;
   jwtToken?: string; // Optional for basic auth
+  sessionCookies?: string; // SAML session cookies (decoded)
   username?: string; // For basic auth (on-premise)
   password?: string; // For basic auth (on-premise)
-  authType?: 'basic' | 'jwt'; // Authentication type
+  authType?: 'basic' | 'jwt' | 'saml'; // Authentication type
   refreshToken?: string;
   uaaUrl?: string;
   uaaClientId?: string;
@@ -57,6 +58,7 @@ export async function loadEnvFile(
     // Extract required fields
     const sapUrl = parsed[ABAP_CONNECTION_VARS.SERVICE_URL];
     const jwtToken = parsed[ABAP_CONNECTION_VARS.AUTHORIZATION_TOKEN];
+    const sessionCookiesB64 = parsed[ABAP_CONNECTION_VARS.SESSION_COOKIES_B64];
     const username = parsed[ABAP_CONNECTION_VARS.USERNAME];
     const password = parsed[ABAP_CONNECTION_VARS.PASSWORD];
 
@@ -73,17 +75,25 @@ export async function loadEnvFile(
     // Determine auth type: if username/password present and no jwtToken, use basic auth
     // If jwtToken present, use JWT auth
     // If neither is present, it's OK - auth can be set later (e.g., via setAuthorizationConfig)
+    const hasSamlCookies = !!(
+      sessionCookiesB64 && sessionCookiesB64.trim() !== ''
+    );
     const isBasicAuth =
       !!(username && password) && (!jwtToken || jwtToken.trim() === '');
     const isJwtAuth = !!(jwtToken && jwtToken.trim() !== '');
-    const _hasNoAuth = !isBasicAuth && !isJwtAuth;
+    const _hasNoAuth = !isBasicAuth && !isJwtAuth && !hasSamlCookies;
 
     const config: EnvConfig = {
       sapUrl: sapUrl.trim(),
     };
 
     // Set authentication fields based on type
-    if (isBasicAuth) {
+    if (hasSamlCookies) {
+      config.sessionCookies = Buffer.from(sessionCookiesB64, 'base64').toString(
+        'utf8',
+      );
+      config.authType = 'saml';
+    } else if (isBasicAuth) {
       config.username = username.trim();
       config.password = password.trim();
       config.authType = 'basic';
@@ -127,7 +137,9 @@ export async function loadEnvFile(
     const authInfo =
       config.authType === 'basic'
         ? `basic auth (username: ${config.username})`
-        : `JWT token(${tokenLength} chars)`;
+        : config.authType === 'saml'
+          ? `SAML session cookies(${config.sessionCookies?.length || 0} chars)`
+          : `JWT token(${tokenLength} chars)`;
     log?.info(
       `Env config loaded from ${envFilePath}: sapUrl(${config.sapUrl.substring(0, 50)}...), ${authInfo}, hasRefreshToken(${!!config.refreshToken}), hasUaaUrl(${!!config.uaaUrl})`,
     );

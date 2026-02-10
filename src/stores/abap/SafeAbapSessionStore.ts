@@ -19,9 +19,10 @@ interface AbapSessionData {
   sapUrl: string;
   sapClient?: string;
   jwtToken?: string; // Optional for basic auth
+  sessionCookies?: string; // SAML session cookies (decoded)
   username?: string; // For basic auth (on-premise)
   password?: string; // For basic auth (on-premise)
-  authType?: 'basic' | 'jwt'; // Authentication type
+  authType?: 'basic' | 'jwt' | 'saml'; // Authentication type
   refreshToken?: string;
   uaaUrl?: string;
   uaaClientId?: string;
@@ -123,6 +124,9 @@ export class SafeAbapSessionStore implements ISessionStore {
     if (rawSession.jwtToken !== undefined) {
       result.authorizationToken = rawSession.jwtToken;
     }
+    if (rawSession.sessionCookies !== undefined) {
+      result.sessionCookies = rawSession.sessionCookies;
+    }
     if (rawSession.sapClient) {
       result.sapClient = rawSession.sapClient;
     }
@@ -194,6 +198,27 @@ export class SafeAbapSessionStore implements ISessionStore {
         `Connection config for ${destination} missing required field: sapUrl`,
       );
       return null;
+    }
+
+    // SAML auth: session cookies
+    if (sessionConfig.authType === 'saml' || sessionConfig.sessionCookies) {
+      if (!sessionConfig.sessionCookies) {
+        this.log?.warn(
+          `Connection config for ${destination} missing required field for SAML auth: sessionCookies`,
+        );
+        return null;
+      }
+
+      this.log?.debug(
+        `Connection config loaded for ${destination} (SAML auth): cookies(${sessionConfig.sessionCookies.length} chars), sapUrl(${sessionConfig.sapUrl.substring(0, 40)}...)`,
+      );
+      return {
+        serviceUrl: sessionConfig.sapUrl,
+        sessionCookies: sessionConfig.sessionCookies,
+        authType: 'saml',
+        sapClient: sessionConfig.sapClient,
+        language: sessionConfig.language,
+      };
     }
 
     // Check for basic auth: if username/password present and no jwtToken, use basic auth

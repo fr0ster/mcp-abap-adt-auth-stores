@@ -16,9 +16,10 @@ interface EnvConfig {
   sapUrl: string;
   sapClient?: string;
   jwtToken?: string; // Optional for basic auth
+  sessionCookies?: string; // SAML session cookies (decoded)
   username?: string; // For basic auth (on-premise)
   password?: string; // For basic auth (on-premise)
-  authType?: 'basic' | 'jwt'; // Authentication type
+  authType?: 'basic' | 'jwt' | 'saml'; // Authentication type
   refreshToken?: string;
   uaaUrl?: string;
   uaaClientId?: string;
@@ -44,10 +45,11 @@ export async function saveTokenToEnv(
   log?.debug(`Saving token to env file: ${envFilePath}`);
   const tokenLength = config.jwtToken?.length || 0;
   const hasBasicAuth = !!(config.username && config.password);
+  const hasSamlCookies = !!config.sessionCookies;
   const formattedToken = formatToken(config.jwtToken);
   const formattedRefreshToken = formatToken(config.refreshToken);
   log?.debug(
-    `Config to save: hasSapUrl(${!!config.sapUrl}), token(${tokenLength} chars${formattedToken ? `, ${formattedToken}` : ''}), hasBasicAuth(${hasBasicAuth}), refreshToken(${formattedRefreshToken || 'none'}), hasUaaUrl(${!!config.uaaUrl})`,
+    `Config to save: hasSapUrl(${!!config.sapUrl}), token(${tokenLength} chars${formattedToken ? `, ${formattedToken}` : ''}), hasBasicAuth(${hasBasicAuth}), hasSamlCookies(${hasSamlCookies}), refreshToken(${formattedRefreshToken || 'none'}), hasUaaUrl(${!!config.uaaUrl})`,
   );
 
   // Ensure directory exists
@@ -91,8 +93,16 @@ export async function saveTokenToEnv(
   // sapUrl is required - always save it
   existingVars.set(ABAP_CONNECTION_VARS.SERVICE_URL, config.sapUrl);
 
-  // Handle authentication: JWT or basic auth
-  if (config.username && config.password) {
+  // Handle authentication: SAML cookies, JWT, or basic auth
+  if (config.sessionCookies) {
+    const cookiesB64 = Buffer.from(config.sessionCookies, 'utf8').toString(
+      'base64',
+    );
+    existingVars.set(ABAP_CONNECTION_VARS.SESSION_COOKIES_B64, cookiesB64);
+    existingVars.set(ABAP_CONNECTION_VARS.AUTHORIZATION_TOKEN, '');
+    existingVars.delete(ABAP_CONNECTION_VARS.USERNAME);
+    existingVars.delete(ABAP_CONNECTION_VARS.PASSWORD);
+  } else if (config.username && config.password) {
     // Basic auth - save username/password
     existingVars.set(ABAP_CONNECTION_VARS.USERNAME, config.username);
     existingVars.set(ABAP_CONNECTION_VARS.PASSWORD, config.password);
@@ -100,12 +110,14 @@ export async function saveTokenToEnv(
     if (config.jwtToken) {
       existingVars.set(ABAP_CONNECTION_VARS.AUTHORIZATION_TOKEN, '');
     }
+    existingVars.delete(ABAP_CONNECTION_VARS.SESSION_COOKIES_B64);
   } else if (config.jwtToken) {
     // JWT auth - save token
     existingVars.set(ABAP_CONNECTION_VARS.AUTHORIZATION_TOKEN, config.jwtToken);
     // Clear username/password if JWT auth is used
     existingVars.delete(ABAP_CONNECTION_VARS.USERNAME);
     existingVars.delete(ABAP_CONNECTION_VARS.PASSWORD);
+    existingVars.delete(ABAP_CONNECTION_VARS.SESSION_COOKIES_B64);
   }
 
   if (config.sapClient) {

@@ -18,8 +18,14 @@ export { loadServiceKey } from './loaders/abap/serviceKeyLoader';
 export { loadXSUAAServiceKey } from './loaders/xsuaa/xsuaaServiceKeyLoader';
 export { AbapServiceKeyStore } from './stores/abap/AbapServiceKeyStore';
 // ABAP stores (with sapUrl)
-export { AbapSessionStore } from './stores/abap/AbapSessionStore';
-export { SafeAbapSessionStore } from './stores/abap/SafeAbapSessionStore';
+export {
+  AbapSessionStore,
+  AbapSessionStore as SamlSessionStore,
+} from './stores/abap/AbapSessionStore';
+export {
+  SafeAbapSessionStore,
+  SafeAbapSessionStore as SafeSamlSessionStore,
+} from './stores/abap/SafeAbapSessionStore';
 // Env file stores (for --env=path scenarios)
 export { EnvFileSessionStore } from './stores/env/EnvFileSessionStore';
 export {
