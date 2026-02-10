@@ -151,6 +151,7 @@ export class AbapSessionStore implements ISessionStore {
       {
         sapUrl: abapConfig.sapUrl,
         jwtToken: abapConfig.jwtToken,
+        sessionCookies: abapConfig.sessionCookies,
         username: abapConfig.username,
         password: abapConfig.password,
         authType: abapConfig.authType,

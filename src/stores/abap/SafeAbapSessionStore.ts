@@ -296,6 +296,7 @@ export class SafeAbapSessionStore implements ISessionStore {
       const newSession: AbapSessionData = {
         sapUrl: serviceUrl,
         jwtToken: config.authorizationToken,
+        sessionCookies: config.sessionCookies,
         username: config.username,
         password: config.password,
         authType: config.authType,
@@ -317,6 +318,10 @@ export class SafeAbapSessionStore implements ISessionStore {
       ...current,
       sapUrl: config.serviceUrl || current.sapUrl,
       jwtToken: config.authorizationToken || current.jwtToken || '',
+      sessionCookies:
+        config.sessionCookies !== undefined
+          ? config.sessionCookies
+          : current.sessionCookies,
       username:
         config.username !== undefined ? config.username : current.username,
       password:

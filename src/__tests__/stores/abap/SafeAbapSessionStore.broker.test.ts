@@ -192,6 +192,24 @@ describe('SafeAbapSessionStore - Broker Usage', () => {
     });
   });
 
+  describe('SAML session cookies', () => {
+    it('should store and load SAML session cookies', async () => {
+      const connConfig: IConnectionConfig = {
+        serviceUrl: 'https://test.sap.com',
+        sessionCookies: 'MYSAPSSO2=abc; SAP_SESSIONID=123',
+        authType: 'saml',
+      };
+
+      await store.setConnectionConfig(testDestination, connConfig);
+
+      const loaded = await store.getConnectionConfig(testDestination);
+      expect(loaded).not.toBeNull();
+      expect(loaded?.authType).toBe('saml');
+      expect(loaded?.sessionCookies).toBe(connConfig.sessionCookies);
+      expect(loaded?.authorizationToken).toBeUndefined();
+    });
+  });
+
   describe('setAuthorizationConfig - update existing session', () => {
     it('should update existing session when calling setAuthorizationConfig again', async () => {
       const connConfig: IConnectionConfig = {

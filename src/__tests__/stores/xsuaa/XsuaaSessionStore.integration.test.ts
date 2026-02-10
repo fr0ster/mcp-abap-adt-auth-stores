@@ -3,6 +3,8 @@
  * Tests with real .env files from test-config.yaml
  */
 
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import type { IConfig } from '@mcp-abap-adt/interfaces';
 import { XsuaaSessionStore } from '../../../stores/xsuaa/XsuaaSessionStore';
 import {
@@ -13,6 +15,17 @@ import {
 } from '../../helpers/configHelpers';
 
 describe('XsuaaSessionStore Integration', () => {
+  const canWrite = async (dir: string): Promise<boolean> => {
+    const probePath = path.join(dir, `.write-test-${Date.now().toString(36)}`);
+    try {
+      await fs.writeFile(probePath, 'probe', 'utf8');
+      await fs.rm(probePath, { force: true });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const config = loadTestConfig();
   const xsuaaDestinations = getXsuaaDestinations(config);
   const sessionsDir = getSessionsDir(config);
@@ -56,6 +69,12 @@ describe('XsuaaSessionStore Integration', () => {
       if (!xsuaaDestinations.btp_destination || !sessionsDir) {
         console.warn(
           '⚠️  Skipping XSUAA session save/load test - missing required config',
+        );
+        return;
+      }
+      if (!(await canWrite(sessionsDir))) {
+        console.warn(
+          '⚠️  Skipping XSUAA session save/load test - sessions directory not writable',
         );
         return;
       }

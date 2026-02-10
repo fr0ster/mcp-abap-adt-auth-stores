@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - ABAP session stores now support SAML session cookies (stored as base64 in env files).
 - Exports: `SamlSessionStore` and `SafeSamlSessionStore` aliases for ABAP stores.
+- Tests for SAML cookie storage and connection config handling.
+
+### Fixed
+- Persist SAML session cookies in file-backed and in-memory ABAP session stores.
 
 ## [0.2.10] - 2025-12-25
 
