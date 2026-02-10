@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Persist SAML session cookies in file-backed and in-memory ABAP session stores.
 
+## [1.0.1] - 2026-02-10
+
+### Added
+- GitHub Actions release workflow.
+
 ## [0.2.10] - 2025-12-25
 
 ### Changed
