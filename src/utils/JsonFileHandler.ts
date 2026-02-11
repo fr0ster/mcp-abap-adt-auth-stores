@@ -56,11 +56,7 @@ export class JsonFileHandler {
     try {
       const fileContent = fs.readFileSync(filePath, 'utf8');
       const parsed = JSON.parse(fileContent);
-      if (
-        parsed &&
-        typeof parsed === 'object' &&
-        !Array.isArray(parsed)
-      ) {
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         return JsonFileHandler.unwrapCredentials(
           parsed as Record<string, unknown>,
         );
@@ -77,11 +73,7 @@ export class JsonFileHandler {
             );
           }
           const parsed = JSON.parse(extracted);
-          if (
-            parsed &&
-            typeof parsed === 'object' &&
-            !Array.isArray(parsed)
-          ) {
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
             return JsonFileHandler.unwrapCredentials(
               parsed as Record<string, unknown>,
             );
