@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-02-12
+
+### Fixed
+- Service key JSON loading now tolerates `cf service-key` output (leading text) and unwraps `credentials` wrapper for XSUAA keys.
+- Added XSUAA service key parsing tests for both direct JSON and `credentials`-wrapped formats.
+
 ## [1.0.0] - 2026-02-10
 
 ### Added
