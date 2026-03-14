@@ -129,7 +129,13 @@ export class EnvFileSessionStore implements ISessionStore {
         return null;
       }
 
-      const authType = (envVars.SAP_AUTH_TYPE || 'basic') as 'basic' | 'jwt';
+      // Auto-detect auth type: SAP_JWT_TOKEN presence implies JWT,
+      // otherwise fall back to SAP_AUTH_TYPE (default: basic)
+      const authType: 'basic' | 'jwt' = envVars.SAP_JWT_TOKEN
+        ? 'jwt'
+        : (envVars.SAP_AUTH_TYPE || 'basic') === 'jwt'
+          ? 'jwt'
+          : 'basic';
 
       const data: EnvSessionData = {
         serviceUrl: envVars.SAP_URL,

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-03-14
+
+### Fixed
+- **EnvFileSessionStore**: Auto-detect JWT auth type when `SAP_JWT_TOKEN` is present in `.env` file, even without explicit `SAP_AUTH_TYPE=jwt`. Previously defaulted to `basic`, causing "Basic authentication requires SAP_CLIENT" errors for cloud systems using `--env-path`.
+
 ## [1.0.2] - 2026-02-12
 
 ### Fixed

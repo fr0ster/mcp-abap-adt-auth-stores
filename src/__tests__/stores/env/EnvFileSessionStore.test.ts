@@ -64,6 +64,25 @@ SAP_PASSWORD=testpass
       expect(authType).toBe('basic');
     });
 
+    it('should auto-detect JWT when SAP_JWT_TOKEN is present without SAP_AUTH_TYPE', async () => {
+      const envPath = createEnvFile(`
+SAP_URL=https://cloud.sap.com
+SAP_JWT_TOKEN=eyJhbGciOiJIUzI1NiJ9.cloud-token
+      `);
+
+      store = new EnvFileSessionStore(envPath, createTestLogger());
+
+      const authType = store.getAuthType();
+      expect(authType).toBe('jwt');
+
+      const config = await store.getConnectionConfig('default');
+      expect(config).toBeDefined();
+      expect(config?.authType).toBe('jwt');
+      expect(config?.authorizationToken).toBe(
+        'eyJhbGciOiJIUzI1NiJ9.cloud-token',
+      );
+    });
+
     it('should fail if SAP_USERNAME is missing for basic auth', async () => {
       const envPath = createEnvFile(`
 SAP_URL=https://test.sap.com
