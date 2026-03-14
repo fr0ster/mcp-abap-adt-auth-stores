@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-03-14
+
+### Changed
+- **Dependencies**: Updated `@mcp-abap-adt/interfaces` to `^5.0.0`, `dotenv` to `^17.3.1`, `@biomejs/biome` to `^2.4.7`, `@types/node` to `^25.5.0`, `jest` to `^30.3.0`.
+- Added `jest-util` as dev dependency (required by `ts-jest@29` with `jest@30`).
+
 ## [1.0.3] - 2026-03-14
 
 ### Fixed
