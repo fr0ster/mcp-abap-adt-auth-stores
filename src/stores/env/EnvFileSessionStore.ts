@@ -16,9 +16,9 @@ import type {
   IAuthorizationConfig,
   IConfig,
   IConnectionConfig,
-  ILogger,
   ISessionStore,
-} from '@mcp-abap-adt/interfaces';
+} from '@mcp-abap-adt/interfaces-auth-sap';
+import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
 
 /**
  * Internal session data structure

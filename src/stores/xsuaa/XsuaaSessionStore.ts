@@ -11,9 +11,9 @@ import type {
   IAuthorizationConfig,
   IConfig,
   IConnectionConfig,
-  ILogger,
   ISessionStore,
-} from '@mcp-abap-adt/interfaces';
+} from '@mcp-abap-adt/interfaces-auth-sap';
+import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
 import { loadXsuaaEnvFile } from '../../storage/xsuaa/xsuaaEnvLoader';
 import { saveXsuaaTokenToEnv } from '../../storage/xsuaa/xsuaaTokenStorage';
 import { formatToken } from '../../utils/formatting';

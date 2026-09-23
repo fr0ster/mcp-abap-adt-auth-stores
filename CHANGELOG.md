@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The contracts come from the packages that declare them, not from the deleted
+  facade.** `@mcp-abap-adt/interfaces@^5.0.0` is replaced by
+  `@mcp-abap-adt/interfaces-auth-sap@^1.0.0`,
+  `@mcp-abap-adt/interfaces-auth@^1.2.0` and
+  `@mcp-abap-adt/interfaces-utils@^1.1.0`, and 21 files were repointed.
+
+  Which name went where was resolved from each installed package's
+  `dist/index.d.ts`, not from a list written by hand:
+
+  | from | names |
+  |---|---|
+  | `interfaces-auth-sap` | `IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `IAuthorizationConfig` — a store of credentials for an SAP or BTP system |
+  | `interfaces-auth` | `STORE_ERROR_CODES`, `StoreErrorCode` — the failure vocabulary, which means the same off SAP |
+  | `interfaces-utils` | `ILogger` |
+
+  **Why now.** `@mcp-abap-adt/interfaces` is deleted as of its 52.0.0; npm still
+  serves 51.0.0, so nothing was broken, but no contract change reaches this
+  package until it moves. This package was pinned at facade major 5 while the
+  facade passed 51 — not churn but a freeze, because one step forward cost it
+  every other package's history. Of the 8 names it imports, **none is an ADT
+  contract**, which is what the split was for.
+
+- **`@mcp-abap-adt/logger@^0.4.0`** (was `^0.1.4`). 0.1.4 declares the facade, so
+  it put a copy of the deleted package in this tree however clean the direct
+  dependencies were. Checked after installing: **no `@mcp-abap-adt/interfaces`
+  anywhere in `node_modules`**, and no `"link": true` in the lockfile.
+
+- Documentation: the README described the interfaces as coming from the facade in
+  three places and imported `STORE_ERROR_CODES` from it in an example. It now
+  names each contract package, and says the facade is deleted rather than
+  deprecated — the distinction matters to a reader deciding what to install.
+
 ## [1.1.0] - 2026-09-03
 
 ### Licence

@@ -13,7 +13,7 @@ npm install @mcp-abap-adt/auth-stores
 
 ## Overview
 
-This package implements the `IServiceKeyStore` and `ISessionStore` interfaces from `@mcp-abap-adt/interfaces`:
+This package implements the `IServiceKeyStore` and `ISessionStore` interfaces from `@mcp-abap-adt/interfaces-auth-sap`:
 
 - **Service Key Stores**: Read service key JSON files from a specified directory
 - **Session Stores**: Read/write session data from/to `.env` files or in-memory storage
@@ -41,7 +41,7 @@ This principle ensures:
 
 This package is responsible for:
 
-1. **Implementing storage interfaces**: Provides concrete implementations of `IServiceKeyStore` and `ISessionStore` interfaces defined in `@mcp-abap-adt/interfaces`
+1. **Implementing storage interfaces**: Provides concrete implementations of `IServiceKeyStore` and `ISessionStore` interfaces defined in `@mcp-abap-adt/interfaces-auth-sap`
 2. **File I/O operations**: Handles reading and writing service key JSON files and session `.env` files
 3. **Data format conversion**: Converts between interface types (`IConfig`, `IConnectionConfig`, `IAuthorizationConfig`) and internal storage formats
 4. **Platform-specific handling**: Provides different store implementations for ABAP, BTP, and XSUAA with their specific data formats
@@ -64,8 +64,11 @@ This package is responsible for:
 
 This package interacts with external packages **ONLY through interfaces**:
 
-- **`@mcp-abap-adt/interfaces`**: Uses interfaces (`IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `IAuthorizationConfig`, `ILogger`) - does not know about concrete implementations in other packages
-- **No direct dependencies on other packages**: All interactions happen through well-defined interfaces
+- **`@mcp-abap-adt/interfaces-auth-sap`**: `IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `IAuthorizationConfig` — what a store is, for an SAP or BTP system
+- **`@mcp-abap-adt/interfaces-auth`**: `STORE_ERROR_CODES` and `StoreErrorCode` — the failure vocabulary, which means the same off SAP
+- **`@mcp-abap-adt/interfaces-utils`**: `ILogger`
+- **Not `@mcp-abap-adt/interfaces`**: that facade is **deleted** as of its 52.0.0. npm still serves 51.0.0 to anyone pinned to it, with every symbol re-exported and deprecated, and nothing further ships there — a consumer takes the package that declares the name
+- **No direct dependencies on other implementation packages**: all interactions happen through those contracts
 
 ## Store Types
 
@@ -277,7 +280,7 @@ import {
   ParseError,
   InvalidConfigError 
 } from '@mcp-abap-adt/auth-stores';
-import { STORE_ERROR_CODES } from '@mcp-abap-adt/interfaces';
+import { STORE_ERROR_CODES } from '@mcp-abap-adt/interfaces-auth';
 
 const serviceKeyStore = new BtpServiceKeyStore('/path/to/keys');
 

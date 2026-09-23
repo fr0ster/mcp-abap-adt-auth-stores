@@ -6,9 +6,9 @@ import type {
   IAuthorizationConfig,
   IConfig,
   IConnectionConfig,
-  ILogger,
   IServiceKeyStore,
-} from '@mcp-abap-adt/interfaces';
+} from '@mcp-abap-adt/interfaces-auth-sap';
+import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
 import { JsonFileHandler } from '../../utils/JsonFileHandler';
 
 /**

@@ -9,9 +9,9 @@ import type {
   IAuthorizationConfig,
   IConfig,
   IConnectionConfig,
-  ILogger,
   ISessionStore,
-} from '@mcp-abap-adt/interfaces';
+} from '@mcp-abap-adt/interfaces-auth-sap';
+import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
 import { formatToken } from '../../utils/formatting';
 
 // Internal type for ABAP session storage (extends base BTP with sapUrl)

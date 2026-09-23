@@ -2,10 +2,8 @@
  * Store error codes and typed error classes
  */
 
-import {
-  STORE_ERROR_CODES,
-  type StoreErrorCode,
-} from '@mcp-abap-adt/interfaces';
+import type { StoreErrorCode } from '@mcp-abap-adt/interfaces-auth';
+import { STORE_ERROR_CODES } from '@mcp-abap-adt/interfaces-auth';
 
 /**
  * Base error class for all store errors
