@@ -16,7 +16,7 @@
  * }
  */
 
-import type { ILogger } from '@mcp-abap-adt/interfaces';
+import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
 
 /**
  * Parser for standard ABAP service key format

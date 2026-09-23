@@ -9,7 +9,7 @@ import * as path from 'node:path';
 import type {
   IAuthorizationConfig,
   IConnectionConfig,
-} from '@mcp-abap-adt/interfaces';
+} from '@mcp-abap-adt/interfaces-auth-sap';
 import { XsuaaSessionStore } from '../../../stores/xsuaa/XsuaaSessionStore';
 import { createTestLogger } from '../../helpers/testLogger';
 

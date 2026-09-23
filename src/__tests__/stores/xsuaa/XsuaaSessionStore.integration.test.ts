@@ -5,7 +5,7 @@
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import type { IConfig } from '@mcp-abap-adt/interfaces';
+import type { IConfig } from '@mcp-abap-adt/interfaces-auth-sap';
 import { XsuaaSessionStore } from '../../../stores/xsuaa/XsuaaSessionStore';
 import {
   getSessionsDir,

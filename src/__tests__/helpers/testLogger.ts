@@ -3,7 +3,7 @@
  * Uses DefaultLogger from @mcp-abap-adt/logger for proper formatting
  */
 
-import type { ILogger } from '@mcp-abap-adt/interfaces';
+import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
 // Import DefaultLogger and getLogLevel from logger package
 // Note: Importing from main entry may cause side effects (pinoLogger initialization)
 // but for stores package this is acceptable as it's only used in tests

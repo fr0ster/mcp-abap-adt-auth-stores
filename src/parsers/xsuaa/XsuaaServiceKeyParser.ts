@@ -11,7 +11,7 @@
  * }
  */
 
-import type { ILogger } from '@mcp-abap-adt/interfaces';
+import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
 
 /**
  * Parser for direct XSUAA service key format from BTP

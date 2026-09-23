@@ -6,7 +6,7 @@
 import type {
   IAuthorizationConfig,
   IConnectionConfig,
-} from '@mcp-abap-adt/interfaces';
+} from '@mcp-abap-adt/interfaces-auth-sap';
 import { SafeXsuaaSessionStore } from '../../../stores/xsuaa/SafeXsuaaSessionStore';
 import { createTestLogger } from '../../helpers/testLogger';
 
