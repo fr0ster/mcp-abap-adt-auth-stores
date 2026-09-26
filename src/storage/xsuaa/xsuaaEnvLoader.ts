@@ -10,6 +10,7 @@ import {
   XSUAA_AUTHORIZATION_VARS,
   XSUAA_CONNECTION_VARS,
 } from '../../utils/constants';
+import { readEnvFileOrNull } from '../readEnvFileOrNull';
 
 // Internal type for XSUAA session storage
 interface XsuaaSessionConfig {
@@ -38,14 +39,13 @@ export async function loadXsuaaEnvFile(
   const envFilePath = path.join(directory, fileName);
   log?.debug(`Reading XSUAA env file: ${envFilePath}`);
 
-  if (!fs.existsSync(envFilePath)) {
+  const envContent = readEnvFileOrNull(envFilePath);
+  if (envContent === null) {
     log?.debug(`XSUAA env file not found: ${envFilePath}`);
     return null;
   }
 
   try {
-    // Read and parse .env file
-    const envContent = fs.readFileSync(envFilePath, 'utf8');
     log?.debug(
       `XSUAA env file read successfully, size: ${envContent.length} bytes`,
     );

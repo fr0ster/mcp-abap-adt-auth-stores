@@ -263,10 +263,8 @@ export class XsuaaSessionStore implements ISessionStore {
     const fileName = `${destination}.env`;
     const sessionPath = path.join(this.directory, fileName);
 
-    if (!fs.existsSync(sessionPath)) {
-      return null;
-    }
-
+    // No existsSync pre-check: it answered false for an untraversable
+    // directory. The loader answers a missing file with null itself.
     try {
       const raw = await this.loadFromFile(sessionPath);
       if (!raw || !isXsuaaSessionConfig(raw)) {

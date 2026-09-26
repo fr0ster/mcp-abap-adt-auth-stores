@@ -19,8 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `loadSession`, `getConnectionConfig`, `getAuthorizationConfig` and the
   writes that read the file first now raise a `StorageError`
   (`code: STORAGE_ERROR`, `operation: 'read'`) naming the destination, with
-  the loader's error as `cause`. A missing file is still `null` — the loaders
-  answer it before anything can fail — and a file that reads but is not a
+  the loader's error as `cause`. A missing file is still `null` — and only a
+  missing one: the loaders no longer check with `fs.existsSync`, which
+  answered false for a file in a directory the process may not enter, so an
+  untraversable sessions folder read as "no session" too. They read the file
+  and answer `null` for `ENOENT` alone (found in review). A file that reads but is not a
   session (no `SAP_URL`, no token) is still treated as none. auth-broker
   3.0.1 passes a `STORAGE_ERROR` on to its caller; before it, the broker
   swallowed store errors too. Measured: a mode-000 session file answered

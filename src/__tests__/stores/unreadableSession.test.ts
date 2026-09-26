@@ -35,6 +35,7 @@ describe.each([
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'unreadable-'));
   });
   afterEach(() => {
+    fs.chmodSync(dir, 0o700);
     const file = path.join(dir, 'D.env');
     if (fs.existsSync(file)) fs.chmodSync(file, 0o600);
     fs.rmSync(dir, { recursive: true, force: true });
@@ -68,6 +69,22 @@ describe.each([
       await expect(store.getAuthorizationConfig('D')).rejects.toBeInstanceOf(
         StorageError,
       );
+    },
+  );
+
+  (asRoot ? it.skip : it)(
+    'raises a StorageError for a session in a directory it may not enter',
+    async () => {
+      // existsSync answers false when the directory has no `x`, so this case
+      // read as "no session" even after the file-mode fix (found in review).
+      fs.writeFileSync(path.join(dir, 'D.env'), content);
+      fs.chmodSync(dir, 0o600);
+      const store = make(dir);
+
+      const failure = await store.loadSession('D').catch((e: unknown) => e);
+
+      expect(failure).toBeInstanceOf(StorageError);
+      expect((failure as StorageError).message).toMatch(/EACCES/);
     },
   );
 });
