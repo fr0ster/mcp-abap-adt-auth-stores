@@ -10,6 +10,7 @@ import {
   ABAP_AUTHORIZATION_VARS,
   ABAP_CONNECTION_VARS,
 } from '../../utils/constants';
+import { readEnvFileOrNull } from '../readEnvFileOrNull';
 
 // Internal type for ABAP environment configuration
 interface EnvConfig {
@@ -43,14 +44,13 @@ export async function loadEnvFile(
   const envFilePath = path.join(directory, fileName);
   log?.debug(`Reading env file: ${envFilePath}`);
 
-  if (!fs.existsSync(envFilePath)) {
+  const envContent = readEnvFileOrNull(envFilePath);
+  if (envContent === null) {
     log?.debug(`Env file not found: ${envFilePath}`);
     return null;
   }
 
   try {
-    // Read and parse .env file
-    const envContent = fs.readFileSync(envFilePath, 'utf8');
     log?.debug(`Env file read successfully, size: ${envContent.length} bytes`);
     const parsed = dotenv.parse(envContent);
     log?.debug(`Parsed env variables: ${Object.keys(parsed).join(', ')}`);
