@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-09-26
+
+### Fixed
+
+- **An XSUAA session without a client secret keeps its refresh token.**
+  `XsuaaSessionStore.loadSession` and `SafeXsuaaSessionStore.loadSession` took
+  the authorization fields from `getAuthorizationConfig`, which answers only a
+  complete config — URL, client ID and secret — and `null` otherwise. A
+  session holding a refresh token but no secret therefore loaded without its
+  refresh token, and the next expiry meant a new login. auth-broker 3.0.0 is
+  that case: it keeps the client secret in the service key and writes only the
+  tokens to the session. Measured on 1.2.2: the refresh token was on disk and
+  `loadSession` returned none. `loadSession` now reads `uaaUrl`,
+  `uaaClientId`, `uaaClientSecret` and `refreshToken` from the session each on
+  its own, as the ABAP stores always did. `getAuthorizationConfig` is
+  unchanged: all three fields or `null`.
+
 ## [1.2.2] - 2026-09-26
 
 ### Security

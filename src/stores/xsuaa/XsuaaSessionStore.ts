@@ -217,15 +217,39 @@ export class XsuaaSessionStore implements ISessionStore {
 
     const tokenLength = connConfig?.authorizationToken?.length || 0;
     const formattedToken = formatToken(connConfig?.authorizationToken);
-    const formattedRefreshToken = formatToken(authConfig?.refreshToken);
-    const hasRefreshToken = !!authConfig?.refreshToken;
+    const authorization = this.authorizationFieldsOf(
+      await this.loadRawSession(destination),
+    );
+    const formattedRefreshToken = formatToken(authorization.refreshToken);
     this.log?.info(
       `Session loaded for ${destination}: token(${tokenLength} chars${formattedToken ? `, ${formattedToken}` : ''}), refreshToken(${formattedRefreshToken || 'none'}), serviceUrl(${connConfig?.serviceUrl ? `${connConfig.serviceUrl.substring(0, 40)}...` : 'none'})`,
     );
     return {
       ...(authConfig || {}),
       ...(connConfig || {}),
+      ...authorization,
     };
+  }
+
+  /**
+   * The authorization fields the session holds, each on its own.
+   *
+   * `getAuthorizationConfig` answers only a complete config — URL, client ID
+   * and secret — and `loadSession` used to take the refresh token from it
+   * alone. A session holding a refresh token but no client secret (the broker
+   * keeps the secret in the service key, not here) then lost its refresh
+   * token on every load, and the next expiry meant a new login. The ABAP
+   * stores read these fields from the session directly; so does this.
+   */
+  private authorizationFieldsOf(
+    raw: XsuaaSessionData | null,
+  ): Partial<IAuthorizationConfig> {
+    const fields: Partial<IAuthorizationConfig> = {};
+    if (raw?.uaaUrl) fields.uaaUrl = raw.uaaUrl;
+    if (raw?.uaaClientId) fields.uaaClientId = raw.uaaClientId;
+    if (raw?.uaaClientSecret) fields.uaaClientSecret = raw.uaaClientSecret;
+    if (raw?.refreshToken) fields.refreshToken = raw.refreshToken;
+    return fields;
   }
 
   /**
