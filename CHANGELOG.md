@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.2.1] - 2026-09-26
+
+### Changed
+
+- **`@mcp-abap-adt/interfaces-auth` `^2.0.1` and `-auth-sap` `^1.0.1`.** The
+  one break in `interfaces-auth` 2 is `AssertionContext.expectedInResponseTo`
+  becoming optional, which only an `IAssertionValidator` implementer sees; no
+  file here names it. `-auth-sap` 1.0.1 is the release that accepts `-auth` 2 —
+  with 1.0.0 an install carried a second, private copy of `-auth` 1.x under it.
+- **`dotenv` `^18.0.4`.** 18.0.0 removed `.env.vault`, preloading and the
+  console tips, and added a CLI; this package calls `dotenv.parse` alone, which
+  none of that touches. No new transitive dependencies.
+- Development: `js-yaml` `^5.4.2`, which ships its own declarations, so
+  `@types/js-yaml` is dropped. `typescript` stays on 5 — `ts-jest` 29 accepts
+  `<7` only.
+
 ## [1.2.0] - 2026-09-24
 
 ### Changed
