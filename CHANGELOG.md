@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-09-26
+
+### Security
+
+- **No token reaches a log line.** `formatToken` returned a token of 50
+  characters or fewer whole, and a longer one's first and last 25 characters.
+  UAA and XSUAA refresh tokens are opaque and about 34 characters, so
+  `AbapSessionStore`, `XsuaaSessionStore`, their `Safe*` variants and the env
+  token storage logged the refresh token in full, at `info`, on every session
+  save and load, and 50 characters of every access token. A log line now
+  carries only `<redacted, N chars>`. Measured: an XSUAA login on the trial
+  returns a 34-character refresh token. **Anyone who shipped logs from an
+  earlier version at `info` or `debug` should treat the refresh tokens in
+  them as exposed and revoke them.** The same leak was closed in
+  auth-providers 4.1.2 and in auth-broker.
+
 ## [1.2.1] - 2026-09-26
 
 ### Changed
