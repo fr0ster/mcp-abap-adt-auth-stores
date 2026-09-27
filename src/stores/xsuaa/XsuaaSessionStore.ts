@@ -14,6 +14,7 @@ import type {
   ISessionStore,
 } from '@mcp-abap-adt/interfaces-auth-sap';
 import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
+import { StorageError } from '../../errors/StoreErrors';
 import { loadXsuaaEnvFile } from '../../storage/xsuaa/xsuaaEnvLoader';
 import { saveXsuaaTokenToEnv } from '../../storage/xsuaa/xsuaaTokenStorage';
 import { formatToken } from '../../utils/formatting';
@@ -262,10 +263,8 @@ export class XsuaaSessionStore implements ISessionStore {
     const fileName = `${destination}.env`;
     const sessionPath = path.join(this.directory, fileName);
 
-    if (!fs.existsSync(sessionPath)) {
-      return null;
-    }
-
+    // No existsSync pre-check: it answered false for an untraversable
+    // directory. The loader answers a missing file with null itself.
     try {
       const raw = await this.loadFromFile(sessionPath);
       if (!raw || !isXsuaaSessionConfig(raw)) {
@@ -276,10 +275,16 @@ export class XsuaaSessionStore implements ISessionStore {
       }
       return raw;
     } catch (error) {
-      this.log?.error(
-        `Error loading session for ${destination}: ${error instanceof Error ? error.message : String(error)}`,
+      // The file is there and could not be read — not "no session". A null
+      // here made an unreadable session look absent, so the caller logged in
+      // again or reported a missing field instead of the file and its error.
+      // A missing file never reaches this catch: the loader answers it null.
+      const cause = error instanceof Error ? error : new Error(String(error));
+      throw new StorageError(
+        'read',
+        `Cannot read the session for "${destination}": ${cause.message}`,
+        cause,
       );
-      return null;
     }
   }
 
