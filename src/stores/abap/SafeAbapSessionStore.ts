@@ -22,7 +22,7 @@ interface AbapSessionData {
   sessionCookies?: string; // SAML session cookies (decoded)
   username?: string; // For basic auth (on-premise)
   password?: string; // For basic auth (on-premise)
-  authType?: 'basic' | 'jwt' | 'saml'; // Authentication type
+  authType?: 'basic' | 'jwt' | 'saml' | 'snc'; // Authentication type
   refreshToken?: string;
   uaaUrl?: string;
   uaaClientId?: string;
@@ -94,7 +94,7 @@ export class SafeAbapSessionStore implements ISessionStore {
       jwtToken: (obj.authorizationToken || obj.jwtToken) as string | undefined,
       username: obj.username as string | undefined,
       password: obj.password as string | undefined,
-      authType: obj.authType as 'basic' | 'jwt' | undefined,
+      authType: obj.authType as AbapSessionData['authType'],
       refreshToken: obj.refreshToken as string | undefined,
       uaaUrl: obj.uaaUrl as string | undefined,
       uaaClientId: obj.uaaClientId as string | undefined,

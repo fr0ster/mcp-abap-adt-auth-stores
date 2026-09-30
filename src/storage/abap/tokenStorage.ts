@@ -19,7 +19,7 @@ interface EnvConfig {
   sessionCookies?: string; // SAML session cookies (decoded)
   username?: string; // For basic auth (on-premise)
   password?: string; // For basic auth (on-premise)
-  authType?: 'basic' | 'jwt' | 'saml'; // Authentication type
+  authType?: 'basic' | 'jwt' | 'saml' | 'snc'; // Authentication type
   refreshToken?: string;
   uaaUrl?: string;
   uaaClientId?: string;

@@ -28,7 +28,7 @@ interface AbapSessionData {
   sessionCookies?: string; // SAML session cookies (decoded)
   username?: string; // For basic auth (on-premise)
   password?: string; // For basic auth (on-premise)
-  authType?: 'basic' | 'jwt' | 'saml'; // Authentication type
+  authType?: 'basic' | 'jwt' | 'saml' | 'snc'; // Authentication type
   refreshToken?: string;
   uaaUrl?: string;
   uaaClientId?: string;
@@ -471,7 +471,7 @@ export class AbapSessionStore implements ISessionStore {
       let existingAuthToken = '';
       let existingUsername: string | undefined;
       let existingPassword: string | undefined;
-      let existingAuthType: 'basic' | 'jwt' | 'saml' | undefined;
+      let existingAuthType: 'basic' | 'jwt' | 'saml' | 'snc' | undefined;
 
       // Try to load existing session file to get serviceUrl and auth info
       try {
