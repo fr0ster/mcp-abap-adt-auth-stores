@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-30
+
+### Breaking
+
+- **Contracts move to `@mcp-abap-adt/interfaces-auth` ^3.0.0 and
+  `@mcp-abap-adt/interfaces-auth-sap` ^1.1.0.** Types from interfaces-auth 2.x
+  and interfaces-auth-sap 1.0.x no longer mix with this package: a consumer on
+  the new contracts must not end up with a second copy of the old ones.
+  **Migration:** bump both contract packages to the versions above alongside
+  this one. Nothing in the stores' own API was removed. Session files written
+  by 1.x keep working; files written by 2.0.0 carry `SAP_AUTH_TYPE`, which a
+  1.x reader ignores.
+
+### Added
+
+- **`authType` is kept explicitly.** `AbapSessionStore` writes
+  `SAP_AUTH_TYPE` (`basic`, `jwt`, `saml` or `snc`) on every save that has one
+  and reads it back; `SafeAbapSessionStore` records the type the credentials
+  imply when none is given. When `SAP_AUTH_TYPE` is present it wins over
+  inference; a file without it is inferred as before (cookies: `saml`; username
+  and password with an empty token: `basic`; token: `jwt`).
+- **SNC sessions.** Both ABAP session stores write and read `sncPartnerName`,
+  `sncQop`, `sncLib` and `sncMyName` (`SAP_SNC_PARTNERNAME`, `SAP_SNC_QOP`,
+  `SAP_SNC_LIB`, `SAP_SNC_MYNAME`, in `ABAP_CONNECTION_VARS`).
+  `getConnectionConfig` answers an `snc` session with `sncPartnerName`
+  (required) and the optional three, no token or password; `loadSession`
+  returns them too. An `snc` write clears the other modes' credentials, and
+  they clear the SNC keys.
+
+### Fixed
+
+- **`AbapSessionStore.setConnectionConfig` keeps `username`, `password` and
+  `authType`** on the new-session and the update branch; it dropped them, so a
+  basic session could not be created or updated through the contract. An update
+  that carries no credential (a language, a client) now leaves the session's
+  credential as it was instead of erasing the token.
+- **`SafeAbapSessionStore.saveSession` accepts a basic, SAML or SNC session
+  without a token** — it threw without one — and keeps `sessionCookies`, which
+  it dropped. `loadSession` returns `username`, `password`, `authType` and the
+  SNC fields.
+- `setAuthorizationConfig` on an existing `AbapSessionStore` session no longer
+  drops the basic credentials, cookies, `authType` or SNC fields.
+
+### Documentation
+
+- README: `EnvFileSessionStore` supports basic and JWT only (not SAML) and
+  writes `SAP_JWT_TOKEN` / `SAP_REFRESH_TOKEN` back to its file (it is not
+  read-only); the dependencies are named with their versions; the session
+  stores use `envLoader` / `tokenStorage`, not `EnvFileHandler`; the
+  `SAP_AUTH_TYPE` and `SAP_SNC_*` keys and the snc session shape are
+  documented; the logger import names `interfaces-utils`.
+- `AbapSessionStore` and `XsuaaSessionStore` header comments no longer claim
+  search paths: no store uses `resolveSearchPaths`.
+
 ## [1.2.4] - 2026-09-27
 
 ### Fixed

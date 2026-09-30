@@ -17,7 +17,7 @@ This package implements the `IServiceKeyStore` and `ISessionStore` interfaces fr
 
 - **Service Key Stores**: Read service key JSON files from a specified directory
 - **Session Stores**: Read/write session data from/to `.env` files or in-memory storage
-- **File Handlers**: Utility classes for working with JSON and ENV files
+- **File Handlers**: Utility classes for working with JSON and ENV files (exported for consumers; the session stores do their own file I/O through `envLoader` / `tokenStorage`)
 
 ## Responsibilities and Design Principles
 
@@ -51,7 +51,7 @@ This package is responsible for:
 - **Implements interfaces**: Provides concrete implementations of `IServiceKeyStore` and `ISessionStore`
 - **Handles file operations**: Reads/writes JSON and `.env` files using atomic operations
 - **Manages data formats**: Converts between interface types and internal storage formats (e.g., `AbapSessionData`, `BtpBaseSessionData`)
-- **Provides utilities**: File handlers (`JsonFileHandler`, `EnvFileHandler`) for safe file operations
+- **Provides utilities**: File handlers (`JsonFileHandler`, `EnvFileHandler`) for safe file operations. The session stores do not use `EnvFileHandler`: `AbapSessionStore` and `XsuaaSessionStore` read and write through their own loaders and token storage (`envLoader`/`tokenStorage`), `EnvFileSessionStore` parses its own file
 
 #### What This Package Does NOT Do
 
@@ -64,9 +64,10 @@ This package is responsible for:
 
 This package interacts with external packages **ONLY through interfaces**:
 
-- **`@mcp-abap-adt/interfaces-auth-sap`**: `IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `IAuthorizationConfig` — what a store is, for an SAP or BTP system
-- **`@mcp-abap-adt/interfaces-auth`**: `STORE_ERROR_CODES` and `StoreErrorCode` — the failure vocabulary, which means the same off SAP
-- **`@mcp-abap-adt/interfaces-utils`**: `ILogger`
+- **`@mcp-abap-adt/interfaces-auth-sap`** (`^1.1.0`): `IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `IAuthorizationConfig` — what a store is, for an SAP or BTP system. 1.1.0 adds `authType: 'snc'` and the `snc*` fields
+- **`@mcp-abap-adt/interfaces-auth`** (`^3.0.0`): `STORE_ERROR_CODES` and `StoreErrorCode` — the failure vocabulary, which means the same off SAP
+- **`@mcp-abap-adt/interfaces-utils`** (`^1.1.0`): `ILogger`
+- **`dotenv`** (`^18.0.4`): parses `.env` files
 - **Not `@mcp-abap-adt/interfaces`**: that facade is **deleted** as of its 52.0.0. npm still serves 51.0.0 to anyone pinned to it, with every symbol re-exported and deprecated, and nothing further ships there — a consumer takes the package that declares the name
 - **No direct dependencies on other implementation packages**: all interactions happen through those contracts
 
@@ -86,7 +87,7 @@ Session stores manage authentication tokens and configuration:
 
 **File-based stores** (persist to `.env` files):
 - **`BtpSessionStore`** - Stores base BTP sessions using `XSUAA_*` environment variables
-- **`AbapSessionStore`** - Stores ABAP sessions using `SAP_*` environment variables
+- **`AbapSessionStore`** - Stores ABAP sessions using `SAP_*` environment variables: basic, JWT, SAML cookies or SNC, with the type kept explicitly in `SAP_AUTH_TYPE`
 - **`XsuaaSessionStore`** - Stores XSUAA sessions using `XSUAA_*` environment variables
 
 **In-memory stores** (non-persistent, secure):
@@ -95,7 +96,7 @@ Session stores manage authentication tokens and configuration:
 - **`SafeXsuaaSessionStore`** - In-memory store for XSUAA sessions
 
 **File-based single-file stores**:
-- **`EnvFileSessionStore`** - Reads from a specific `.env` file path (e.g., `--env /path/to/.env`)
+- **`EnvFileSessionStore`** - A specific `.env` file path (e.g., `--env /path/to/.env`); basic and JWT only (no SAML, no SNC)
 
 ## Usage
 
@@ -136,6 +137,19 @@ const sessionStore = new AbapSessionStore('/path/to/sessions');
 // In-memory session store
 const safeSessionStore = new SafeAbapSessionStore();
 
+// A session holds one credential: basic, jwt, saml or snc, through the contract
+await sessionStore.setConnectionConfig('DEV', {
+  serviceUrl: 'https://dev.example.com',
+  authType: 'basic',
+  username: 'DEVELOPER',
+  password: '...',
+});
+await sessionStore.setConnectionConfig('DEV_SNC', {
+  serviceUrl: 'https://dev.example.com',
+  authType: 'snc',
+  sncPartnerName: 'p:CN=DEV, O=ORG, C=DE',
+});
+
 // SAML aliases (same behavior as ABAP stores)
 const samlSessionStore = new SamlSessionStore('/path/to/sessions');
 const safeSamlSessionStore = new SafeSamlSessionStore();
@@ -169,7 +183,7 @@ import { EnvFileSessionStore } from '@mcp-abap-adt/auth-stores';
 const store = new EnvFileSessionStore('/path/to/.env', logger);
 
 // Check the auth type from the file
-const authType = store.getAuthType(); // 'basic' | 'jwt' | 'saml' | null
+const authType = store.getAuthType(); // 'basic' | 'jwt' | null
 
 // Load session (works like other session stores)
 const config = await store.loadSession('default');
@@ -188,7 +202,7 @@ console.log(config?.authorizationToken, config?.refreshToken);
 SAP_URL=https://your-sap-system.com
 SAP_CLIENT=100
 
-# Auth type: 'basic', 'jwt', or 'saml' (defaults to 'basic')
+# Auth type: 'basic' or 'jwt' (defaults to 'basic'; a SAP_JWT_TOKEN implies 'jwt')
 SAP_AUTH_TYPE=basic
 
 # Basic auth credentials
@@ -202,13 +216,53 @@ SAP_PASSWORD=your-password
 # SAP_UAA_URL=https://uaa.example.com
 # SAP_UAA_CLIENT_ID=client-id
 # SAP_UAA_CLIENT_SECRET=client-secret
-
-# OR SAML auth (session cookies, base64-encoded)
-# SAP_AUTH_TYPE=saml
-# SAP_SESSION_COOKIES_B64=base64-encoded-cookie-string
 ```
 
-**Important**: This store is **read-only** for the file. Token updates (e.g., refreshed JWT tokens) are stored in memory only and do not modify the original `.env` file.
+**Important**: `EnvFileSessionStore` supports basic and JWT only — SAML and SNC sessions are for `AbapSessionStore` / `SafeAbapSessionStore`. It is not read-only: it writes `SAP_JWT_TOKEN` and `SAP_REFRESH_TOKEN` back to its file when the token is refreshed or set (`save()`).
+
+### AbapSessionStore env format
+
+`AbapSessionStore` keeps one `{destination}.env` per destination in its directory. The authentication type is written explicitly:
+
+```bash
+SAP_URL=https://your-sap-system.com
+SAP_CLIENT=100
+SAP_LANGUAGE=EN
+
+# basic | jwt | saml | snc — written on every save that has an authType
+SAP_AUTH_TYPE=snc
+
+# snc: a partner name, no token or password
+SAP_SNC_PARTNERNAME=p:CN=SID, O=ORG, C=DE
+SAP_SNC_QOP=9
+SAP_SNC_LIB=/usr/sap/sapcrypto/libsapcrypto.so
+SAP_SNC_MYNAME=p:CN=ME, O=ORG, C=DE
+
+# basic: SAP_USERNAME / SAP_PASSWORD
+# jwt:   SAP_JWT_TOKEN / SAP_REFRESH_TOKEN / SAP_UAA_URL / SAP_UAA_CLIENT_ID / SAP_UAA_CLIENT_SECRET
+# saml:  SAP_SESSION_COOKIES_B64 (base64-encoded cookie string)
+```
+
+- `SAP_AUTH_TYPE` wins when present. A file without it (written before 2.0.0) is inferred as before: cookies mean `saml`; a username and password with an empty token mean `basic`; a token means `jwt`. An unknown value is ignored and the type inferred.
+- Writing a session in one mode clears the credentials of the others, including the SNC keys when it is not `snc`.
+- `SAP_SNC_PARTNERNAME` is required for an `snc` session; the other three are optional.
+
+**The snc session shape** — what `getConnectionConfig` returns, and what `loadSession` includes:
+
+```typescript
+{
+  serviceUrl: 'https://your-sap-system.com',
+  authType: 'snc',
+  sncPartnerName: 'p:CN=SID, O=ORG, C=DE',
+  sncQop: '9',            // only when stored
+  sncLib: '/usr/sap/...', // only when stored
+  sncMyName: 'p:CN=ME',   // only when stored
+  sapClient: '100',
+  language: 'EN',
+}
+```
+
+`SafeAbapSessionStore` holds the same shapes in memory and accepts a session without a token when it is basic (username and password), SAML (`sessionCookies`) or SNC (`sncPartnerName`).
 
 ### Directory Configuration
 
@@ -383,7 +437,7 @@ Stores support optional logging through the `ILogger` interface. To enable detai
 
 ```typescript
 import { AbapServiceKeyStore } from '@mcp-abap-adt/auth-stores';
-import type { ILogger } from '@mcp-abap-adt/interfaces';
+import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
 
 // Create logger (or use your own implementation)
 const logger: ILogger = {

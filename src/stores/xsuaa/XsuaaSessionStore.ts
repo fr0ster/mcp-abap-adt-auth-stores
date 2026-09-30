@@ -33,10 +33,8 @@ interface XsuaaSessionData {
  * XSUAA Session Store implementation
  *
  * Stores session data in {destination}.env files using XSUAA_* variables.
- * Search paths priority:
- * 1. Constructor parameter (highest)
- * 2. AUTH_BROKER_PATH environment variable
- * 3. Current working directory (lowest)
+ * Reads and writes {destination}.env in the constructor's directory. It does
+ * not search other locations: no store uses `resolveSearchPaths`.
  */
 export class XsuaaSessionStore implements ISessionStore {
   protected directory: string;

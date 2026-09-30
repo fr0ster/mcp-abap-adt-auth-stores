@@ -1,9 +1,12 @@
 /**
  * ABAP Session Store - extends base BTP store with sapUrl support
  *
- * Reads/writes session data from/to {destination}.env files in search paths.
- * Stores full ABAP configuration: SAP URL (sapUrl), JWT token, refresh token, UAA config, SAP client, language.
- * This extends base BTP store by adding sapUrl requirement.
+ * Reads/writes session data from/to {destination}.env files in the one
+ * directory given to the constructor (through envLoader and tokenStorage).
+ * Stores the ABAP configuration: SAP URL (sapUrl), the authentication type
+ * (SAP_AUTH_TYPE: basic, jwt, saml or snc) and its credential — a JWT token,
+ * username and password, SAML session cookies, or the SNC fields — plus refresh
+ * token, UAA config, SAP client and language.
  */
 
 import * as fs from 'node:fs';
@@ -43,12 +46,8 @@ interface AbapSessionData {
 /**
  * ABAP Session store implementation
  *
- * Searches for {destination}.env files in configured search paths.
- * Writes to first search path (highest priority).
- * Search paths priority:
- * 1. Constructor parameter (highest)
- * 2. AUTH_BROKER_PATH environment variable
- * 3. Current working directory (lowest)
+ * Reads and writes {destination}.env in the constructor's directory. It does
+ * not search other locations: no store uses `resolveSearchPaths`.
  */
 export class AbapSessionStore implements ISessionStore {
   protected directory: string;
