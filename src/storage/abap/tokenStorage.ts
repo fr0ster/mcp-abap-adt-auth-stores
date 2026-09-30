@@ -25,6 +25,10 @@ interface EnvConfig {
   uaaClientId?: string;
   uaaClientSecret?: string;
   language?: string;
+  sncPartnerName?: string; // SNC logon
+  sncQop?: string;
+  sncLib?: string;
+  sncMyName?: string;
 }
 
 /**
@@ -93,8 +97,35 @@ export async function saveTokenToEnv(
   // sapUrl is required - always save it
   existingVars.set(ABAP_CONNECTION_VARS.SERVICE_URL, config.sapUrl);
 
-  // Handle authentication: SAML cookies, JWT, or basic auth
-  if (config.sessionCookies) {
+  // Handle authentication: SNC, SAML cookies, basic auth, or JWT.
+  // Each mode clears the other modes' credentials.
+  const isSnc =
+    config.authType === 'snc' ||
+    (config.authType === undefined && !!config.sncPartnerName);
+  const sncKeys = [
+    ABAP_CONNECTION_VARS.SNC_PARTNER_NAME,
+    ABAP_CONNECTION_VARS.SNC_QOP,
+    ABAP_CONNECTION_VARS.SNC_LIB,
+    ABAP_CONNECTION_VARS.SNC_MY_NAME,
+  ];
+  if (isSnc) {
+    // A write is the whole snc session: what is not given is removed
+    const sncValues = [
+      config.sncPartnerName,
+      config.sncQop,
+      config.sncLib,
+      config.sncMyName,
+    ];
+    sncKeys.forEach((key, i) => {
+      const value = sncValues[i];
+      if (value) existingVars.set(key, value);
+      else existingVars.delete(key);
+    });
+    existingVars.set(ABAP_CONNECTION_VARS.AUTHORIZATION_TOKEN, '');
+    existingVars.delete(ABAP_CONNECTION_VARS.USERNAME);
+    existingVars.delete(ABAP_CONNECTION_VARS.PASSWORD);
+    existingVars.delete(ABAP_CONNECTION_VARS.SESSION_COOKIES_B64);
+  } else if (config.sessionCookies) {
     const cookiesB64 = Buffer.from(config.sessionCookies, 'utf8').toString(
       'base64',
     );
@@ -118,6 +149,18 @@ export async function saveTokenToEnv(
     existingVars.delete(ABAP_CONNECTION_VARS.USERNAME);
     existingVars.delete(ABAP_CONNECTION_VARS.PASSWORD);
     existingVars.delete(ABAP_CONNECTION_VARS.SESSION_COOKIES_B64);
+  }
+
+  if (!isSnc) {
+    for (const key of sncKeys) existingVars.delete(key);
+  }
+
+  // The declared type; without one, a stale declaration must not outlive the
+  // credentials it described, so the reader infers again.
+  if (config.authType) {
+    existingVars.set(ABAP_CONNECTION_VARS.AUTH_TYPE, config.authType);
+  } else {
+    existingVars.delete(ABAP_CONNECTION_VARS.AUTH_TYPE);
   }
 
   if (config.sapClient) {
@@ -174,7 +217,9 @@ export async function saveTokenToEnv(
   fs.renameSync(tempFilePath, envFilePath);
   const authInfo = hasBasicAuth
     ? `basic auth (username: ${config.username})`
-    : `JWT token(${tokenLength} chars${formattedToken ? `, ${formattedToken}` : ''})`;
+    : isSnc
+      ? 'SNC'
+      : `JWT token(${tokenLength} chars${formattedToken ? `, ${formattedToken}` : ''})`;
   log?.info(
     `Token saved to ${envFilePath}: ${authInfo}, sapUrl(${config.sapUrl ? `${config.sapUrl.substring(0, 50)}...` : 'none'}), variables(${envLines.length})`,
   );

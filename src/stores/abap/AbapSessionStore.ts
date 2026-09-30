@@ -34,6 +34,10 @@ interface AbapSessionData {
   uaaClientId?: string;
   uaaClientSecret?: string;
   language?: string;
+  sncPartnerName?: string; // SNC logon
+  sncQop?: string;
+  sncLib?: string;
+  sncMyName?: string;
 }
 
 /**
@@ -98,23 +102,34 @@ export class AbapSessionStore implements ISessionStore {
       language: obj.language as string | undefined,
     };
 
-    // Handle authentication: SAML cookies, basic auth, or JWT auth
-    if (obj.sessionCookies) {
-      result.sessionCookies = obj.sessionCookies as string;
-      result.authType = 'saml';
+    // The declared authType wins; without one, infer it from what is given.
+    const type =
+      (obj.authType as AbapSessionData['authType']) ??
+      (obj.sessionCookies
+        ? 'saml'
+        : obj.username && obj.password
+          ? 'basic'
+          : obj.sncPartnerName
+            ? 'snc'
+            : 'jwt');
+    result.authType = type;
+    const token = (obj.authorizationToken || obj.jwtToken || '') as string;
+
+    if (type === 'saml') {
+      result.sessionCookies = obj.sessionCookies as string | undefined;
       result.jwtToken = '';
-    } else if (obj.username && obj.password) {
-      // Basic auth
-      result.username = obj.username as string;
-      result.password = obj.password as string;
-      result.authType = 'basic';
-      result.jwtToken = obj.authorizationToken || obj.jwtToken || '';
+    } else if (type === 'basic') {
+      result.username = obj.username as string | undefined;
+      result.password = obj.password as string | undefined;
+      result.jwtToken = token;
+    } else if (type === 'snc') {
+      result.sncPartnerName = obj.sncPartnerName as string | undefined;
+      result.sncQop = obj.sncQop as string | undefined;
+      result.sncLib = obj.sncLib as string | undefined;
+      result.sncMyName = obj.sncMyName as string | undefined;
+      result.jwtToken = '';
     } else {
-      // JWT auth
-      result.jwtToken = (obj.authorizationToken ||
-        obj.jwtToken ||
-        '') as string;
-      result.authType = 'jwt';
+      result.jwtToken = token;
     }
 
     return result;
@@ -156,6 +171,10 @@ export class AbapSessionStore implements ISessionStore {
         username: abapConfig.username,
         password: abapConfig.password,
         authType: abapConfig.authType,
+        sncPartnerName: abapConfig.sncPartnerName,
+        sncQop: abapConfig.sncQop,
+        sncLib: abapConfig.sncLib,
+        sncMyName: abapConfig.sncMyName,
         refreshToken: abapConfig.refreshToken,
         uaaUrl: abapConfig.uaaUrl,
         uaaClientId: abapConfig.uaaClientId,
@@ -254,6 +273,18 @@ export class AbapSessionStore implements ISessionStore {
     }
     if (rawSession.authType) {
       result.authType = rawSession.authType;
+    }
+    if (rawSession.sncPartnerName) {
+      result.sncPartnerName = rawSession.sncPartnerName;
+    }
+    if (rawSession.sncQop) {
+      result.sncQop = rawSession.sncQop;
+    }
+    if (rawSession.sncLib) {
+      result.sncLib = rawSession.sncLib;
+    }
+    if (rawSession.sncMyName) {
+      result.sncMyName = rawSession.sncMyName;
     }
     if (rawSession.sapClient) {
       result.sapClient = rawSession.sapClient;
@@ -382,8 +413,45 @@ export class AbapSessionStore implements ISessionStore {
       return null;
     }
 
+    // The declared type wins; a file without one is inferred as it always was
+    const type =
+      sessionConfig.authType ??
+      (sessionConfig.sessionCookies
+        ? 'saml'
+        : !sessionConfig.jwtToken &&
+            sessionConfig.username &&
+            sessionConfig.password
+          ? 'basic'
+          : !sessionConfig.jwtToken && sessionConfig.sncPartnerName
+            ? 'snc'
+            : 'jwt');
+
+    // SNC auth: partner name, no token or password
+    if (type === 'snc') {
+      if (!sessionConfig.sncPartnerName) {
+        this.log?.warn(
+          `Connection config for ${destination} missing required field for SNC auth: sncPartnerName`,
+        );
+        return null;
+      }
+
+      this.log?.debug(
+        `Connection config loaded for ${destination} (SNC auth): partner(${sessionConfig.sncPartnerName}), sapUrl(${sessionConfig.sapUrl.substring(0, 40)}...)`,
+      );
+      return {
+        serviceUrl: sessionConfig.sapUrl,
+        authType: 'snc',
+        sncPartnerName: sessionConfig.sncPartnerName,
+        ...(sessionConfig.sncQop && { sncQop: sessionConfig.sncQop }),
+        ...(sessionConfig.sncLib && { sncLib: sessionConfig.sncLib }),
+        ...(sessionConfig.sncMyName && { sncMyName: sessionConfig.sncMyName }),
+        sapClient: sessionConfig.sapClient,
+        language: sessionConfig.language,
+      };
+    }
+
     // SAML auth: session cookies
-    if (sessionConfig.authType === 'saml' || sessionConfig.sessionCookies) {
+    if (type === 'saml') {
       if (!sessionConfig.sessionCookies) {
         this.log?.warn(
           `Connection config for ${destination} missing required field for SAML auth: sessionCookies`,
@@ -404,13 +472,7 @@ export class AbapSessionStore implements ISessionStore {
     }
 
     // Check for basic auth: if username/password present and no jwtToken, use basic auth
-    const isBasicAuth =
-      sessionConfig.authType === 'basic' ||
-      (!sessionConfig.jwtToken &&
-        sessionConfig.username &&
-        sessionConfig.password);
-
-    if (isBasicAuth) {
+    if (type === 'basic') {
       if (!sessionConfig.username || !sessionConfig.password) {
         this.log?.warn(
           `Connection config for ${destination} missing required fields for basic auth: username(${!!sessionConfig.username}), password(${!!sessionConfig.password})`,
@@ -536,6 +598,14 @@ export class AbapSessionStore implements ISessionStore {
     const updated: IConfig = {
       serviceUrl: current.sapUrl,
       authorizationToken: current.jwtToken,
+      sessionCookies: current.sessionCookies,
+      username: current.username,
+      password: current.password,
+      authType: current.authType,
+      sncPartnerName: current.sncPartnerName,
+      sncQop: current.sncQop,
+      sncLib: current.sncLib,
+      sncMyName: current.sncMyName,
       sapClient: current.sapClient,
       language: current.language,
       uaaUrl: config.uaaUrl,
@@ -584,6 +654,13 @@ export class AbapSessionStore implements ISessionStore {
         serviceUrl: serviceUrl,
         authorizationToken: config.authorizationToken || '',
         sessionCookies: config.sessionCookies,
+        username: config.username,
+        password: config.password,
+        authType: config.authType,
+        sncPartnerName: config.sncPartnerName,
+        sncQop: config.sncQop,
+        sncLib: config.sncLib,
+        sncMyName: config.sncMyName,
         sapClient: config.sapClient,
         language: config.language,
       };
@@ -598,13 +675,42 @@ export class AbapSessionStore implements ISessionStore {
     this.log?.debug(
       `Updating connection config for existing session ${destination}: serviceUrl(${config.serviceUrl ? `${config.serviceUrl.substring(0, 40)}...` : 'unchanged'}), token(${config.authorizationToken?.length || 0} chars${formatToken(config.authorizationToken) ? `, ${formatToken(config.authorizationToken)}` : ''})`,
     );
+    // A call that carries a credential replaces the session's credential; one
+    // that carries none (a language, a client) leaves the credential as it was.
+    const carriesCredential = !!(
+      config.authorizationToken ||
+      config.sessionCookies ||
+      config.username ||
+      config.password ||
+      config.sncPartnerName ||
+      config.authType
+    );
+    const credential: IConfig = carriesCredential
+      ? {
+          authorizationToken: config.authorizationToken,
+          sessionCookies: config.sessionCookies,
+          username: config.username,
+          password: config.password,
+          authType: config.authType,
+          sncPartnerName: config.sncPartnerName,
+          sncQop: config.sncQop,
+          sncLib: config.sncLib,
+          sncMyName: config.sncMyName,
+        }
+      : {
+          authorizationToken: current.jwtToken,
+          sessionCookies: current.sessionCookies,
+          username: current.username,
+          password: current.password,
+          authType: current.authType,
+          sncPartnerName: current.sncPartnerName,
+          sncQop: current.sncQop,
+          sncLib: current.sncLib,
+          sncMyName: current.sncMyName,
+        };
     const updated: IConfig = {
       serviceUrl: config.serviceUrl || current.sapUrl,
-      authorizationToken: config.authorizationToken,
-      sessionCookies:
-        config.sessionCookies !== undefined
-          ? config.sessionCookies
-          : current.sessionCookies,
+      ...credential,
       sapClient:
         config.sapClient !== undefined ? config.sapClient : current.sapClient,
       language:
