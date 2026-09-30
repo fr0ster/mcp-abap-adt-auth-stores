@@ -229,7 +229,7 @@ SAP_URL=https://your-sap-system.com
 SAP_CLIENT=100
 SAP_LANGUAGE=EN
 
-# basic | jwt | saml | snc — written on every save that has an authType
+# basic | jwt | saml | snc — written on every save that carries a credential
 SAP_AUTH_TYPE=snc
 
 # snc: a partner name, no token or password
@@ -244,8 +244,16 @@ SAP_SNC_MYNAME=p:CN=ME, O=ORG, C=DE
 ```
 
 - `SAP_AUTH_TYPE` wins when present. A file without it (written before 2.0.0) is inferred as before: cookies mean `saml`; a username and password with an empty token mean `basic`; a token means `jwt`. An unknown value is ignored and the type inferred.
-- Writing a session in one mode clears the credentials of the others, including the SNC keys when it is not `snc`.
+- **SNC is never inferred.** It is new in 2.0.0, so no older file needs it: a session is `snc` only when `authType: 'snc'` is declared (`SAP_AUTH_TYPE=snc`). `sncPartnerName` without it is not a credential, and the `SAP_SNC_*` keys of a file without `SAP_AUTH_TYPE=snc` are not read.
+- **A save writes `SAP_AUTH_TYPE` when it carries a credential**: the declared `authType`, or, without one, the type the credential implies — cookies are `saml`, a token is `jwt` (a token wins over a username and password, as the reader has always decided), a username and password are `basic`. A save that carries neither a type nor a credential (a refresh token alone, a client) leaves the credential keys, the `SAP_SNC_*` keys and `SAP_AUTH_TYPE` as they are.
+- Writing a session in one mode clears the credentials of the others: their keys are removed (`SAP_JWT_TOKEN` is left empty, as 1.x wrote it), including the SNC keys when it is not `snc`.
 - `SAP_SNC_PARTNERNAME` is required for an `snc` session; the other three are optional.
+
+**Updating a session with `setConnectionConfig`** — both ABAP session stores (`AbapSessionStore`, `SafeAbapSessionStore`) apply the same rules:
+
+- A call of the session's current type — declared, or carrying only fields of that type — updates field by field: `{ password: 'new' }` on a basic session keeps the username; `{ sncQop: '3' }` on an snc session keeps the partner name. A field given as `undefined` keeps its value; an empty string clears it.
+- A call of another type replaces the credential, and the fields of the other types are dropped.
+- A call with no credential (`{ language: 'DE' }`, a client, a URL) leaves the credential as it was.
 
 **The snc session shape** — what `getConnectionConfig` returns, and what `loadSession` includes:
 
@@ -262,7 +270,7 @@ SAP_SNC_MYNAME=p:CN=ME, O=ORG, C=DE
 }
 ```
 
-`SafeAbapSessionStore` holds the same shapes in memory and accepts a session without a token when it is basic (username and password), SAML (`sessionCookies`) or SNC (`sncPartnerName`).
+`SafeAbapSessionStore` holds the same shapes in memory, one credential per session, and chooses the type by the same rules. `saveSession` accepts a session without a token when it is basic (username and password), SAML (`sessionCookies`) or SNC (`authType: 'snc'` with `sncPartnerName`); a session with no credential at all is refused.
 
 ### Directory Configuration
 

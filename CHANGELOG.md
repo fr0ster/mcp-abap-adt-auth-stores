@@ -23,32 +23,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`authType` is kept explicitly.** `AbapSessionStore` writes
-  `SAP_AUTH_TYPE` (`basic`, `jwt`, `saml` or `snc`) on every save that has one
-  and reads it back; `SafeAbapSessionStore` records the type the credentials
-  imply when none is given. When `SAP_AUTH_TYPE` is present it wins over
-  inference; a file without it is inferred as before (cookies: `saml`; username
-  and password with an empty token: `basic`; token: `jwt`).
+  `SAP_AUTH_TYPE` (`basic`, `jwt`, `saml` or `snc`) on every save that carries
+  a credential — the declared `authType`, or the type the credential implies —
+  and reads it back; `SafeAbapSessionStore` records the type the same way. A
+  save with neither a type nor a credential (a refresh token alone) leaves the
+  credential and `SAP_AUTH_TYPE` as they are. When `SAP_AUTH_TYPE` is present
+  it wins over inference; a file without it is inferred as before (cookies:
+  `saml`; username and password with an empty token: `basic`; token: `jwt`).
 - **SNC sessions.** Both ABAP session stores write and read `sncPartnerName`,
   `sncQop`, `sncLib` and `sncMyName` (`SAP_SNC_PARTNERNAME`, `SAP_SNC_QOP`,
   `SAP_SNC_LIB`, `SAP_SNC_MYNAME`, in `ABAP_CONNECTION_VARS`).
   `getConnectionConfig` answers an `snc` session with `sncPartnerName`
   (required) and the optional three, no token or password; `loadSession`
   returns them too. An `snc` write clears the other modes' credentials, and
-  they clear the SNC keys.
+  they clear the SNC keys. **SNC is never inferred**: there are no SNC sessions
+  from before 2.0.0, so a session is `snc` only when `authType: 'snc'` is
+  declared; `sncPartnerName` without it is not a credential.
+- **One rule for `setConnectionConfig` in both ABAP session stores.** A call
+  of the session's current type (declared, or carrying only that type's
+  fields) updates field by field — `{ password }` keeps the username,
+  `{ sncQop }` keeps the partner name; a call of another type replaces the
+  credential and drops the other types' fields; a call with no credential
+  (a language, a client) leaves it as it was.
+
+### Changed
+
+- **Without a declared `authType`, a token wins over a username and password
+  on save too.** 1.x read such a file as `jwt`, but `AbapSessionStore.saveSession`
+  wrote it as `basic` and cleared the token; both stores now write what the
+  reader reads (`SafeAbapSessionStore` already answered `jwt`). Declare
+  `authType: 'basic'` to store a basic session from a config that also carries
+  a token.
 
 ### Fixed
 
 - **`AbapSessionStore.setConnectionConfig` keeps `username`, `password` and
-  `authType`** on the new-session and the update branch; it dropped them, so a
-  basic session could not be created or updated through the contract. An update
-  that carries no credential (a language, a client) now leaves the session's
-  credential as it was instead of erasing the token.
+  `authType`.** 1.2.4 ignored a username and password given to it: a new
+  session was written without them (`getConnectionConfig` answered `null`),
+  and an existing jwt session stayed jwt. A basic session could not be created
+  or updated through the contract. (A call that carries no credential kept the
+  token, the basic credentials and the cookies in 1.2.4 as it does now.)
 - **`SafeAbapSessionStore.saveSession` accepts a basic, SAML or SNC session
   without a token** — it threw without one — and keeps `sessionCookies`, which
   it dropped. `loadSession` returns `username`, `password`, `authType` and the
   SNC fields.
-- `setAuthorizationConfig` on an existing `AbapSessionStore` session no longer
-  drops the basic credentials, cookies, `authType` or SNC fields.
+- **`SafeAbapSessionStore` holds one credential per session.** A write of
+  another type kept the previous type's fields — cookies set on a jwt session
+  left the token beside them in 1.2.4, and `loadSession` returned both — and
+  an update could never clear a token (`authorizationToken: ''` kept the old
+  one). The other types' fields now go, and an empty token clears it.
+- **A jwt session saved as basic no longer keeps its token.**
+  `AbapSessionStore` cleared `SAP_JWT_TOKEN` on a basic write only when the
+  write itself carried a token: in 1.2.4 a jwt file saved with a username and
+  password kept `SAP_JWT_TOKEN` and still read back as jwt. Every write of one
+  type now clears the other types' keys.
 
 ### Documentation
 
