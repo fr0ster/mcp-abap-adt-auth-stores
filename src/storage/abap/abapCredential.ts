@@ -73,7 +73,7 @@ export function credentialOf(
  * - the update declares a type, or carries fields of the current type only, or
  *   carries a credential that implies a type (`inferAuthType`);
  * - that type equal to the current one merges field by field — a field the
- *   update leaves `undefined` keeps its current value;
+ *   update leaves `undefined` keeps its current value, and `''` clears it;
  * - a different type replaces the credential, and the other types' fields go;
  * - no type at all (a language, a client) leaves the credential as it was.
  */
@@ -82,8 +82,9 @@ export function updateCredential(
   update: AbapCredential,
 ): AbapCredential {
   const currentType = inferAuthType(current);
+  // a field is carried when it is given at all — '' clears it
   const carried = MODES.filter((mode) =>
-    MODE_FIELDS[mode].some((field) => !!update[field]),
+    MODE_FIELDS[mode].some((field) => update[field] !== undefined),
   );
   const type =
     update.authType ??

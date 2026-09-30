@@ -230,6 +230,32 @@ describe('ABAP session stores - credential writes', () => {
       expect(await store.getConnectionConfig(dest)).toBeNull();
     });
 
+    it.each([
+      ['jwt', { authorizationToken: '' }, 'authorizationToken', []],
+      ['basic', { password: '' }, 'password', ['username']],
+      ['saml', { sessionCookies: '' }, 'sessionCookies', []],
+      [
+        'snc',
+        { sncQop: '' },
+        'sncQop',
+        ['sncPartnerName', 'sncLib', 'sncMyName'],
+      ],
+    ] as const)(
+      'without a declared type, an empty %s field clears it',
+      async (mode, update, field, kept) => {
+        await store.setConnectionConfig(dest, {
+          serviceUrl: URL,
+          ...credentials[mode],
+        });
+        await store.setConnectionConfig(dest, { ...update });
+        const session = await store.loadSession(dest);
+        const present = credentialFieldsOf(session);
+        expect(present).not.toContain(field);
+        expect(present).toEqual(expect.arrayContaining([...kept]));
+        expect(session?.authType).toBe(mode);
+      },
+    );
+
     it('without a declared type, a save carrying two credentials is refused', async () => {
       const saved = expect(
         store.saveSession(dest, {

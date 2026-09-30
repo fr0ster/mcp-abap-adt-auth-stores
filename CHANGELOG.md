@@ -42,7 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **One rule for `setConnectionConfig` in both ABAP session stores.** A call
   of the session's current type (declared, or carrying only that type's
   fields) updates field by field — `{ password }` keeps the username,
-  `{ sncQop }` keeps the partner name; a call of another type replaces the
+  `{ sncQop }` keeps the partner name, and a field given as `''` clears it
+  (`{ authorizationToken: '' }` clears the token); a call of another type replaces the
   credential and drops the other types' fields; a call with no credential
   (a language, a client) leaves it as it was.
 
