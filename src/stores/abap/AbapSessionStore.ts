@@ -1,9 +1,12 @@
 /**
  * ABAP Session Store - extends base BTP store with sapUrl support
  *
- * Reads/writes session data from/to {destination}.env files in search paths.
- * Stores full ABAP configuration: SAP URL (sapUrl), JWT token, refresh token, UAA config, SAP client, language.
- * This extends base BTP store by adding sapUrl requirement.
+ * Reads/writes session data from/to {destination}.env files in the one
+ * directory given to the constructor (through envLoader and tokenStorage).
+ * Stores the ABAP configuration: SAP URL (sapUrl), the authentication type
+ * (SAP_AUTH_TYPE: basic, jwt, saml or snc) and its credential — a JWT token,
+ * username and password, SAML session cookies, or the SNC fields — plus refresh
+ * token, UAA config, SAP client and language.
  */
 
 import * as fs from 'node:fs';
@@ -16,6 +19,12 @@ import type {
 } from '@mcp-abap-adt/interfaces-auth-sap';
 import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
 import { StorageError } from '../../errors/StoreErrors';
+import {
+  credentialOf,
+  inferAuthType,
+  toCredential,
+  updateCredential,
+} from '../../storage/abap/abapCredential';
 import { loadEnvFile } from '../../storage/abap/envLoader';
 import { saveTokenToEnv } from '../../storage/abap/tokenStorage';
 import { formatToken } from '../../utils/formatting';
@@ -28,23 +37,23 @@ interface AbapSessionData {
   sessionCookies?: string; // SAML session cookies (decoded)
   username?: string; // For basic auth (on-premise)
   password?: string; // For basic auth (on-premise)
-  authType?: 'basic' | 'jwt' | 'saml'; // Authentication type
+  authType?: 'basic' | 'jwt' | 'saml' | 'snc'; // Authentication type
   refreshToken?: string;
   uaaUrl?: string;
   uaaClientId?: string;
   uaaClientSecret?: string;
   language?: string;
+  sncPartnerName?: string; // SNC logon
+  sncQop?: string;
+  sncLib?: string;
+  sncMyName?: string;
 }
 
 /**
  * ABAP Session store implementation
  *
- * Searches for {destination}.env files in configured search paths.
- * Writes to first search path (highest priority).
- * Search paths priority:
- * 1. Constructor parameter (highest)
- * 2. AUTH_BROKER_PATH environment variable
- * 3. Current working directory (lowest)
+ * Reads and writes {destination}.env in the constructor's directory. It does
+ * not search other locations: no store uses `resolveSearchPaths`.
  */
 export class AbapSessionStore implements ISessionStore {
   protected directory: string;
@@ -98,25 +107,12 @@ export class AbapSessionStore implements ISessionStore {
       language: obj.language as string | undefined,
     };
 
-    // Handle authentication: SAML cookies, basic auth, or JWT auth
-    if (obj.sessionCookies) {
-      result.sessionCookies = obj.sessionCookies as string;
-      result.authType = 'saml';
-      result.jwtToken = '';
-    } else if (obj.username && obj.password) {
-      // Basic auth
-      result.username = obj.username as string;
-      result.password = obj.password as string;
-      result.authType = 'basic';
-      result.jwtToken = obj.authorizationToken || obj.jwtToken || '';
-    } else {
-      // JWT auth
-      result.jwtToken = (obj.authorizationToken ||
-        obj.jwtToken ||
-        '') as string;
-      result.authType = 'jwt';
-    }
-
+    // The declared authType wins; without one, the credential implies it
+    // (inferAuthType). With neither, no credential is written and the file's
+    // credential and SAP_AUTH_TYPE stay as they are.
+    const given = toCredential(obj);
+    const type = inferAuthType(given);
+    if (type) Object.assign(result, credentialOf(given, type));
     return result;
   }
 
@@ -156,6 +152,10 @@ export class AbapSessionStore implements ISessionStore {
         username: abapConfig.username,
         password: abapConfig.password,
         authType: abapConfig.authType,
+        sncPartnerName: abapConfig.sncPartnerName,
+        sncQop: abapConfig.sncQop,
+        sncLib: abapConfig.sncLib,
+        sncMyName: abapConfig.sncMyName,
         refreshToken: abapConfig.refreshToken,
         uaaUrl: abapConfig.uaaUrl,
         uaaClientId: abapConfig.uaaClientId,
@@ -254,6 +254,18 @@ export class AbapSessionStore implements ISessionStore {
     }
     if (rawSession.authType) {
       result.authType = rawSession.authType;
+    }
+    if (rawSession.sncPartnerName) {
+      result.sncPartnerName = rawSession.sncPartnerName;
+    }
+    if (rawSession.sncQop) {
+      result.sncQop = rawSession.sncQop;
+    }
+    if (rawSession.sncLib) {
+      result.sncLib = rawSession.sncLib;
+    }
+    if (rawSession.sncMyName) {
+      result.sncMyName = rawSession.sncMyName;
     }
     if (rawSession.sapClient) {
       result.sapClient = rawSession.sapClient;
@@ -382,8 +394,36 @@ export class AbapSessionStore implements ISessionStore {
       return null;
     }
 
+    // The loader has already decided the type: SAP_AUTH_TYPE, or inferred as
+    // 1.x did. A file with no credential at all is treated as jwt (and has none).
+    const type = sessionConfig.authType ?? 'jwt';
+
+    // SNC auth: partner name, no token or password
+    if (type === 'snc') {
+      if (!sessionConfig.sncPartnerName) {
+        this.log?.warn(
+          `Connection config for ${destination} missing required field for SNC auth: sncPartnerName`,
+        );
+        return null;
+      }
+
+      this.log?.debug(
+        `Connection config loaded for ${destination} (SNC auth): partner(${sessionConfig.sncPartnerName}), sapUrl(${sessionConfig.sapUrl.substring(0, 40)}...)`,
+      );
+      return {
+        serviceUrl: sessionConfig.sapUrl,
+        authType: 'snc',
+        sncPartnerName: sessionConfig.sncPartnerName,
+        ...(sessionConfig.sncQop && { sncQop: sessionConfig.sncQop }),
+        ...(sessionConfig.sncLib && { sncLib: sessionConfig.sncLib }),
+        ...(sessionConfig.sncMyName && { sncMyName: sessionConfig.sncMyName }),
+        sapClient: sessionConfig.sapClient,
+        language: sessionConfig.language,
+      };
+    }
+
     // SAML auth: session cookies
-    if (sessionConfig.authType === 'saml' || sessionConfig.sessionCookies) {
+    if (type === 'saml') {
       if (!sessionConfig.sessionCookies) {
         this.log?.warn(
           `Connection config for ${destination} missing required field for SAML auth: sessionCookies`,
@@ -404,13 +444,7 @@ export class AbapSessionStore implements ISessionStore {
     }
 
     // Check for basic auth: if username/password present and no jwtToken, use basic auth
-    const isBasicAuth =
-      sessionConfig.authType === 'basic' ||
-      (!sessionConfig.jwtToken &&
-        sessionConfig.username &&
-        sessionConfig.password);
-
-    if (isBasicAuth) {
+    if (type === 'basic') {
       if (!sessionConfig.username || !sessionConfig.password) {
         this.log?.warn(
           `Connection config for ${destination} missing required fields for basic auth: username(${!!sessionConfig.username}), password(${!!sessionConfig.password})`,
@@ -471,7 +505,7 @@ export class AbapSessionStore implements ISessionStore {
       let existingAuthToken = '';
       let existingUsername: string | undefined;
       let existingPassword: string | undefined;
-      let existingAuthType: 'basic' | 'jwt' | 'saml' | undefined;
+      let existingAuthType: 'basic' | 'jwt' | 'saml' | 'snc' | undefined;
 
       // Try to load existing session file to get serviceUrl and auth info
       try {
@@ -536,6 +570,14 @@ export class AbapSessionStore implements ISessionStore {
     const updated: IConfig = {
       serviceUrl: current.sapUrl,
       authorizationToken: current.jwtToken,
+      sessionCookies: current.sessionCookies,
+      username: current.username,
+      password: current.password,
+      authType: current.authType,
+      sncPartnerName: current.sncPartnerName,
+      sncQop: current.sncQop,
+      sncLib: current.sncLib,
+      sncMyName: current.sncMyName,
       sapClient: current.sapClient,
       language: current.language,
       uaaUrl: config.uaaUrl,
@@ -580,10 +622,18 @@ export class AbapSessionStore implements ISessionStore {
         `Creating new session for ${destination} via setConnectionConfig: serviceUrl(${serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars${formatToken(config.authorizationToken) ? `, ${formatToken(config.authorizationToken)}` : ''})`,
       );
 
+      const next = updateCredential({}, toCredential(config));
       const newSession: IConfig = {
         serviceUrl: serviceUrl,
-        authorizationToken: config.authorizationToken || '',
-        sessionCookies: config.sessionCookies,
+        authType: next.authType,
+        authorizationToken: next.jwtToken,
+        sessionCookies: next.sessionCookies,
+        username: next.username,
+        password: next.password,
+        sncPartnerName: next.sncPartnerName,
+        sncQop: next.sncQop,
+        sncLib: next.sncLib,
+        sncMyName: next.sncMyName,
         sapClient: config.sapClient,
         language: config.language,
       };
@@ -598,13 +648,24 @@ export class AbapSessionStore implements ISessionStore {
     this.log?.debug(
       `Updating connection config for existing session ${destination}: serviceUrl(${config.serviceUrl ? `${config.serviceUrl.substring(0, 40)}...` : 'unchanged'}), token(${config.authorizationToken?.length || 0} chars${formatToken(config.authorizationToken) ? `, ${formatToken(config.authorizationToken)}` : ''})`,
     );
+    // Same type (declared, or only the current type's fields given): merge
+    // field by field. Another type: replace, and the other types' fields go.
+    // No credential (a language, a client): the credential stays as it was.
+    const next = updateCredential(current, toCredential(config));
+    const credential: IConfig = {
+      authType: next.authType,
+      authorizationToken: next.jwtToken,
+      sessionCookies: next.sessionCookies,
+      username: next.username,
+      password: next.password,
+      sncPartnerName: next.sncPartnerName,
+      sncQop: next.sncQop,
+      sncLib: next.sncLib,
+      sncMyName: next.sncMyName,
+    };
     const updated: IConfig = {
       serviceUrl: config.serviceUrl || current.sapUrl,
-      authorizationToken: config.authorizationToken,
-      sessionCookies:
-        config.sessionCookies !== undefined
-          ? config.sessionCookies
-          : current.sessionCookies,
+      ...credential,
       sapClient:
         config.sapClient !== undefined ? config.sapClient : current.sapClient,
       language:

@@ -62,6 +62,16 @@ export const ABAP_CONNECTION_VARS = {
   SAP_CLIENT: 'SAP_CLIENT',
   /** Language (optional) */
   SAP_LANGUAGE: 'SAP_LANGUAGE',
+  /** Authentication type: basic | jwt | saml | snc (optional; inferred when absent) */
+  AUTH_TYPE: 'SAP_AUTH_TYPE',
+  /** SNC partner name (SNC logon) */
+  SNC_PARTNER_NAME: 'SAP_SNC_PARTNERNAME',
+  /** SNC quality of protection (optional) */
+  SNC_QOP: 'SAP_SNC_QOP',
+  /** Path to the SNC library (optional) */
+  SNC_LIB: 'SAP_SNC_LIB',
+  /** Own SNC name (optional) */
+  SNC_MY_NAME: 'SAP_SNC_MYNAME',
 } as const;
 
 /**

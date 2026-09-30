@@ -10,6 +10,25 @@ import {
   ABAP_CONNECTION_VARS,
 } from '../../utils/constants';
 import { formatToken } from '../../utils/formatting';
+import {
+  type AbapAuthType,
+  credentialOf,
+  inferAuthType,
+  MODE_FIELDS,
+} from './abapCredential';
+
+/** The env keys of each type's credential, in MODE_FIELDS order. */
+const CREDENTIAL_KEYS: Record<AbapAuthType, readonly string[]> = {
+  jwt: [ABAP_CONNECTION_VARS.AUTHORIZATION_TOKEN],
+  basic: [ABAP_CONNECTION_VARS.USERNAME, ABAP_CONNECTION_VARS.PASSWORD],
+  saml: [ABAP_CONNECTION_VARS.SESSION_COOKIES_B64],
+  snc: [
+    ABAP_CONNECTION_VARS.SNC_PARTNER_NAME,
+    ABAP_CONNECTION_VARS.SNC_QOP,
+    ABAP_CONNECTION_VARS.SNC_LIB,
+    ABAP_CONNECTION_VARS.SNC_MY_NAME,
+  ],
+};
 
 // Internal type for ABAP environment configuration (same as in envLoader.ts)
 interface EnvConfig {
@@ -19,12 +38,16 @@ interface EnvConfig {
   sessionCookies?: string; // SAML session cookies (decoded)
   username?: string; // For basic auth (on-premise)
   password?: string; // For basic auth (on-premise)
-  authType?: 'basic' | 'jwt' | 'saml'; // Authentication type
+  authType?: 'basic' | 'jwt' | 'saml' | 'snc'; // Authentication type
   refreshToken?: string;
   uaaUrl?: string;
   uaaClientId?: string;
   uaaClientSecret?: string;
   language?: string;
+  sncPartnerName?: string; // SNC logon
+  sncQop?: string;
+  sncLib?: string;
+  sncMyName?: string;
 }
 
 /**
@@ -93,31 +116,41 @@ export async function saveTokenToEnv(
   // sapUrl is required - always save it
   existingVars.set(ABAP_CONNECTION_VARS.SERVICE_URL, config.sapUrl);
 
-  // Handle authentication: SAML cookies, JWT, or basic auth
-  if (config.sessionCookies) {
-    const cookiesB64 = Buffer.from(config.sessionCookies, 'utf8').toString(
-      'base64',
-    );
-    existingVars.set(ABAP_CONNECTION_VARS.SESSION_COOKIES_B64, cookiesB64);
-    existingVars.set(ABAP_CONNECTION_VARS.AUTHORIZATION_TOKEN, '');
-    existingVars.delete(ABAP_CONNECTION_VARS.USERNAME);
-    existingVars.delete(ABAP_CONNECTION_VARS.PASSWORD);
-  } else if (config.username && config.password) {
-    // Basic auth - save username/password
-    existingVars.set(ABAP_CONNECTION_VARS.USERNAME, config.username);
-    existingVars.set(ABAP_CONNECTION_VARS.PASSWORD, config.password);
-    // Clear JWT token if basic auth is used
-    if (config.jwtToken) {
+  // The credential: the declared type, or the one the credential implies
+  // (inferAuthType — SNC is never inferred). A write of one type clears the
+  // other types' keys and records the type in SAP_AUTH_TYPE. A write with no
+  // type and no credential (a refresh token, a client) leaves the credential
+  // keys and SAP_AUTH_TYPE as they are.
+  const authType = inferAuthType(config);
+  if (authType) {
+    const credential = credentialOf(config, authType);
+    for (const mode of Object.keys(CREDENTIAL_KEYS) as AbapAuthType[]) {
+      const keys = CREDENTIAL_KEYS[mode];
+      if (mode === authType) {
+        // A write is the whole credential of its type: what is not given goes
+        MODE_FIELDS[mode].forEach((field, i) => {
+          const value = credential[field];
+          if (value) {
+            existingVars.set(
+              keys[i],
+              mode === 'saml'
+                ? Buffer.from(value, 'utf8').toString('base64')
+                : value,
+            );
+          } else {
+            existingVars.delete(keys[i]);
+          }
+        });
+      } else {
+        for (const key of keys) existingVars.delete(key);
+      }
+    }
+    // An empty SAP_JWT_TOKEN is what 1.x wrote beside a credential that is not
+    // a token; a 1.x reader then does not take a stale token for the session.
+    if (!credential.jwtToken) {
       existingVars.set(ABAP_CONNECTION_VARS.AUTHORIZATION_TOKEN, '');
     }
-    existingVars.delete(ABAP_CONNECTION_VARS.SESSION_COOKIES_B64);
-  } else if (config.jwtToken) {
-    // JWT auth - save token
-    existingVars.set(ABAP_CONNECTION_VARS.AUTHORIZATION_TOKEN, config.jwtToken);
-    // Clear username/password if JWT auth is used
-    existingVars.delete(ABAP_CONNECTION_VARS.USERNAME);
-    existingVars.delete(ABAP_CONNECTION_VARS.PASSWORD);
-    existingVars.delete(ABAP_CONNECTION_VARS.SESSION_COOKIES_B64);
+    existingVars.set(ABAP_CONNECTION_VARS.AUTH_TYPE, authType);
   }
 
   if (config.sapClient) {
@@ -172,9 +205,16 @@ export async function saveTokenToEnv(
 
   // Atomic rename
   fs.renameSync(tempFilePath, envFilePath);
-  const authInfo = hasBasicAuth
-    ? `basic auth (username: ${config.username})`
-    : `JWT token(${tokenLength} chars${formattedToken ? `, ${formattedToken}` : ''})`;
+  const authInfo =
+    authType === 'basic'
+      ? `basic auth (username: ${config.username})`
+      : authType === 'snc'
+        ? 'SNC'
+        : authType === 'saml'
+          ? 'SAML session cookies'
+          : authType === 'jwt'
+            ? `JWT token(${tokenLength} chars${formattedToken ? `, ${formattedToken}` : ''})`
+            : 'credential unchanged';
   log?.info(
     `Token saved to ${envFilePath}: ${authInfo}, sapUrl(${config.sapUrl ? `${config.sapUrl.substring(0, 50)}...` : 'none'}), variables(${envLines.length})`,
   );

@@ -20,12 +20,16 @@ interface EnvConfig {
   sessionCookies?: string; // SAML session cookies (decoded)
   username?: string; // For basic auth (on-premise)
   password?: string; // For basic auth (on-premise)
-  authType?: 'basic' | 'jwt' | 'saml'; // Authentication type
+  authType?: 'basic' | 'jwt' | 'saml' | 'snc'; // Authentication type
   refreshToken?: string;
   uaaUrl?: string;
   uaaClientId?: string;
   uaaClientSecret?: string;
   language?: string;
+  sncPartnerName?: string; // SNC logon
+  sncQop?: string;
+  sncLib?: string;
+  sncMyName?: string;
 }
 
 /**
@@ -87,8 +91,37 @@ export async function loadEnvFile(
       sapUrl: sapUrl.trim(),
     };
 
+    // An explicit SAP_AUTH_TYPE wins over inference; a file without one (or
+    // with a value this package does not know) is inferred as before.
+    const declared = parsed[ABAP_CONNECTION_VARS.AUTH_TYPE]?.trim();
+    const explicitType = isKnownAuthType(declared) ? declared : undefined;
+    if (declared && !explicitType) {
+      log?.warn(
+        `Env file ${envFilePath} has an unknown SAP_AUTH_TYPE; inferring the type`,
+      );
+    }
+
     // Set authentication fields based on type
-    if (hasSamlCookies) {
+    if (explicitType === 'snc') {
+      config.authType = 'snc';
+      const partner = parsed[ABAP_CONNECTION_VARS.SNC_PARTNER_NAME]?.trim();
+      if (partner) config.sncPartnerName = partner;
+    } else if (explicitType === 'saml') {
+      config.authType = 'saml';
+      if (hasSamlCookies) {
+        config.sessionCookies = Buffer.from(
+          sessionCookiesB64,
+          'base64',
+        ).toString('utf8');
+      }
+    } else if (explicitType === 'basic') {
+      config.authType = 'basic';
+      if (username) config.username = username.trim();
+      if (password) config.password = password.trim();
+    } else if (explicitType === 'jwt') {
+      config.authType = 'jwt';
+      config.jwtToken = (jwtToken || '').trim();
+    } else if (hasSamlCookies) {
       config.sessionCookies = Buffer.from(sessionCookiesB64, 'base64').toString(
         'utf8',
       );
@@ -107,6 +140,16 @@ export async function loadEnvFile(
     }
 
     // Optional fields
+    if (config.authType === 'snc') {
+      for (const [key, field] of [
+        [ABAP_CONNECTION_VARS.SNC_QOP, 'sncQop'],
+        [ABAP_CONNECTION_VARS.SNC_LIB, 'sncLib'],
+        [ABAP_CONNECTION_VARS.SNC_MY_NAME, 'sncMyName'],
+      ] as const) {
+        if (parsed[key]) config[field] = parsed[key].trim();
+      }
+    }
+
     if (parsed[ABAP_CONNECTION_VARS.SAP_CLIENT]) {
       config.sapClient = parsed[ABAP_CONNECTION_VARS.SAP_CLIENT].trim();
     }
@@ -137,9 +180,11 @@ export async function loadEnvFile(
     const authInfo =
       config.authType === 'basic'
         ? `basic auth (username: ${config.username})`
-        : config.authType === 'saml'
-          ? `SAML session cookies(${config.sessionCookies?.length || 0} chars)`
-          : `JWT token(${tokenLength} chars)`;
+        : config.authType === 'snc'
+          ? `SNC (partner: ${config.sncPartnerName})`
+          : config.authType === 'saml'
+            ? `SAML session cookies(${config.sessionCookies?.length || 0} chars)`
+            : `JWT token(${tokenLength} chars)`;
     log?.info(
       `Env config loaded from ${envFilePath}: sapUrl(${config.sapUrl.substring(0, 50)}...), ${authInfo}, hasRefreshToken(${!!config.refreshToken}), hasUaaUrl(${!!config.uaaUrl})`,
     );
@@ -152,4 +197,15 @@ export async function loadEnvFile(
       `Failed to load environment file for destination "${destination}": ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+}
+
+const KNOWN_AUTH_TYPES = ['basic', 'jwt', 'saml', 'snc'] as const;
+
+function isKnownAuthType(
+  value: string | undefined,
+): value is (typeof KNOWN_AUTH_TYPES)[number] {
+  return (
+    value !== undefined &&
+    (KNOWN_AUTH_TYPES as readonly string[]).includes(value)
+  );
 }
