@@ -48,12 +48,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Without a declared `authType`, a token wins over a username and password
-  on save too.** 1.x read such a file as `jwt`, but `AbapSessionStore.saveSession`
-  wrote it as `basic` and cleared the token; both stores now write what the
-  reader reads (`SafeAbapSessionStore` already answered `jwt`). Declare
-  `authType: 'basic'` to store a basic session from a config that also carries
-  a token.
+- **A save or update carrying more than one credential and no `authType` is
+  refused.** A session holds one credential; the stores no longer guess which
+  one a config with, say, a token and a username and password meant (1.x
+  `AbapSessionStore.saveSession` stored `basic` and dropped the token, while
+  `SafeAbapSessionStore` answered `jwt`). Declare `authType`, and the store
+  takes that type's fields. Reading a file without `SAP_AUTH_TYPE` is inferred
+  as in 1.x.
 
 ### Fixed
 

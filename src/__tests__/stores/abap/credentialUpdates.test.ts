@@ -230,17 +230,51 @@ describe('ABAP session stores - credential writes', () => {
       expect(await store.getConnectionConfig(dest)).toBeNull();
     });
 
-    it('without a declared type, a token wins over username and password', async () => {
+    it('without a declared type, a save carrying two credentials is refused', async () => {
+      const saved = expect(
+        store.saveSession(dest, {
+          serviceUrl: URL,
+          authorizationToken: 'TOKEN',
+          username: 'USER',
+          password: 'PASS',
+        }),
+      ).rejects.toThrow('carries more than one credential (jwt, basic)');
+      await saved;
+      expect(await store.getConnectionConfig(dest)).toBeNull();
+    });
+
+    it('without a declared type, an update carrying two credentials is refused and changes nothing', async () => {
+      await store.setConnectionConfig(dest, {
+        serviceUrl: URL,
+        authorizationToken: 'TOKEN',
+        authType: 'jwt',
+      });
+      const updated = expect(
+        store.setConnectionConfig(dest, {
+          serviceUrl: URL,
+          sessionCookies: 'C=1',
+          username: 'USER',
+          password: 'PASS',
+        }),
+      ).rejects.toThrow('carries more than one credential (saml, basic)');
+      await updated;
+      const conn = await store.getConnectionConfig(dest);
+      expect(conn?.authType).toBe('jwt');
+      expect(conn?.authorizationToken).toBe('TOKEN');
+    });
+
+    it('a declared type takes its own credential from a config carrying two', async () => {
       await store.saveSession(dest, {
         serviceUrl: URL,
         authorizationToken: 'TOKEN',
         username: 'USER',
         password: 'PASS',
+        authType: 'basic',
       });
       const conn = await store.getConnectionConfig(dest);
-      expect(conn?.authType).toBe('jwt');
-      expect(conn?.authorizationToken).toBe('TOKEN');
-      expect((await store.loadSession(dest))?.authType).toBe('jwt');
+      expect(conn?.authType).toBe('basic');
+      expect(conn?.username).toBe('USER');
+      expect(conn?.authorizationToken).toBeFalsy();
     });
 
     it('sncPartnerName without authType is not snc', async () => {

@@ -36,19 +36,26 @@ export const MODE_FIELDS: Record<AbapAuthType, readonly CredentialField[]> = {
 const MODES = Object.keys(MODE_FIELDS) as AbapAuthType[];
 
 /**
- * The declared type wins. Without one, the type is what the credential implies,
- * in the order 1.x used: cookies are saml, a token is jwt (it wins over a
- * username and password), a username and password are basic. SNC is never
- * inferred — it is new in 2.0, so there is no older session to infer it for:
- * a session is snc only when `authType: 'snc'` is declared. Nothing implied is
- * `undefined`.
+ * The declared type wins. Without one, the type is what the credential implies:
+ * cookies are saml, a token is jwt, a username and password are basic. A config
+ * that implies more than one is refused — a session holds one credential, and
+ * the store does not guess which one was meant; declare `authType`. SNC is
+ * never inferred — it is new in 2.0, so there is no older session to infer it
+ * for: a session is snc only when `authType: 'snc'` is declared. Nothing
+ * implied is `undefined`.
  */
 export function inferAuthType(c: AbapCredential): AbapAuthType | undefined {
   if (c.authType) return c.authType;
-  if (c.sessionCookies) return 'saml';
-  if (c.jwtToken) return 'jwt';
-  if (c.username && c.password) return 'basic';
-  return undefined;
+  const implied: AbapAuthType[] = [];
+  if (c.sessionCookies) implied.push('saml');
+  if (c.jwtToken) implied.push('jwt');
+  if (c.username && c.password) implied.push('basic');
+  if (implied.length > 1) {
+    throw new Error(
+      `ABAP session config carries more than one credential (${implied.join(', ')}) and no authType; declare authType`,
+    );
+  }
+  return implied[0];
 }
 
 /** Only the fields of `type`, with the type declared. */
