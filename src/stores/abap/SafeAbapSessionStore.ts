@@ -12,6 +12,14 @@ import type {
   ISessionStore,
 } from '@mcp-abap-adt/interfaces-auth-sap';
 import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
+import {
+  type AbapCredential,
+  credentialOf,
+  inferAuthType,
+  MODE_FIELDS,
+  toCredential,
+  updateCredential,
+} from '../../storage/abap/abapCredential';
 import { formatToken } from '../../utils/formatting';
 
 // Internal type for ABAP session storage (extends base BTP with sapUrl)
@@ -78,20 +86,20 @@ export class SafeAbapSessionStore implements ISessionStore {
       );
     }
     // A session holds one credential: a token, a user and password, SAML
-    // cookies, or an SNC partner name
+    // cookies, or — declared as authType 'snc' — an SNC partner name
+    const given = toCredential(obj);
     const hasCredential = !!(
-      obj.authorizationToken ||
-      obj.jwtToken ||
-      (obj.username && obj.password) ||
-      obj.sessionCookies ||
-      obj.sncPartnerName
+      given.jwtToken ||
+      (given.username && given.password) ||
+      given.sessionCookies ||
+      (given.authType === 'snc' && given.sncPartnerName)
     );
     if (!hasCredential) {
       this.log?.error(
-        `Validation failed: missing a credential (token, username and password, sessionCookies or sncPartnerName)`,
+        `Validation failed: missing a credential (token, username and password, sessionCookies, or authType 'snc' with sncPartnerName)`,
       );
       throw new Error(
-        'ABAP session config missing required field: authorizationToken or jwtToken (or username and password, sessionCookies, sncPartnerName)',
+        "ABAP session config missing required field: authorizationToken or jwtToken (or username and password, sessionCookies, or authType 'snc' with sncPartnerName)",
       );
     }
   }
@@ -102,17 +110,13 @@ export class SafeAbapSessionStore implements ISessionStore {
     }
     const obj = config as Record<string, unknown>;
     // Convert IConfig format (serviceUrl, authorizationToken) to internal format (sapUrl, jwtToken)
+    // One credential, of the declared type or the one the credential implies;
+    // the other types' fields are not kept
+    const given = toCredential(obj);
+    const type = inferAuthType(given);
     const internal: AbapSessionData = {
       sapUrl: (obj.serviceUrl || obj.sapUrl) as string,
-      jwtToken: (obj.authorizationToken || obj.jwtToken) as string | undefined,
-      username: obj.username as string | undefined,
-      password: obj.password as string | undefined,
-      sessionCookies: obj.sessionCookies as string | undefined,
-      authType: inferAuthType(obj),
-      sncPartnerName: obj.sncPartnerName as string | undefined,
-      sncQop: obj.sncQop as string | undefined,
-      sncLib: obj.sncLib as string | undefined,
-      sncMyName: obj.sncMyName as string | undefined,
+      ...(type ? credentialOf(given, type) : {}),
       refreshToken: obj.refreshToken as string | undefined,
       uaaUrl: obj.uaaUrl as string | undefined,
       uaaClientId: obj.uaaClientId as string | undefined,
@@ -239,18 +243,9 @@ export class SafeAbapSessionStore implements ISessionStore {
       return null;
     }
 
-    // The declared type wins; a session without one is inferred as it always was
-    const type =
-      sessionConfig.authType ??
-      (sessionConfig.sessionCookies
-        ? 'saml'
-        : !sessionConfig.jwtToken &&
-            sessionConfig.username &&
-            sessionConfig.password
-          ? 'basic'
-          : !sessionConfig.jwtToken && sessionConfig.sncPartnerName
-            ? 'snc'
-            : 'jwt');
+    // Every write records the type (declared or implied); a session with no
+    // credential at all is treated as jwt (and has none)
+    const type = sessionConfig.authType ?? 'jwt';
 
     // SNC auth: partner name, no token or password
     if (type === 'snc') {
@@ -365,15 +360,7 @@ export class SafeAbapSessionStore implements ISessionStore {
 
       const newSession: AbapSessionData = {
         sapUrl: serviceUrl,
-        jwtToken: config.authorizationToken,
-        sessionCookies: config.sessionCookies,
-        username: config.username,
-        password: config.password,
-        authType: inferAuthType(config as Record<string, unknown>),
-        sncPartnerName: config.sncPartnerName,
-        sncQop: config.sncQop,
-        sncLib: config.sncLib,
-        sncMyName: config.sncMyName,
+        ...updateCredential({}, toCredential(config)),
         sapClient: config.sapClient,
         language: config.language,
       };
@@ -388,28 +375,13 @@ export class SafeAbapSessionStore implements ISessionStore {
     this.log?.debug(
       `Updating connection config for existing session ${destination}: serviceUrl(${config.serviceUrl ? `${config.serviceUrl.substring(0, 40)}...` : 'unchanged'}), token(${config.authorizationToken?.length || 0} chars${formatToken(config.authorizationToken) ? `, ${formatToken(config.authorizationToken)}` : ''})`,
     );
+    // Same type (declared, or only the current type's fields given): merge
+    // field by field. Another type: replace, and the other types' fields go.
+    // No credential (a language, a client): the credential stays as it was.
     const updated: AbapSessionData = {
-      ...current,
+      ...withoutCredential(current),
+      ...updateCredential(current, toCredential(config)),
       sapUrl: config.serviceUrl || current.sapUrl,
-      jwtToken: config.authorizationToken || current.jwtToken || '',
-      sessionCookies:
-        config.sessionCookies !== undefined
-          ? config.sessionCookies
-          : current.sessionCookies,
-      username:
-        config.username !== undefined ? config.username : current.username,
-      password:
-        config.password !== undefined ? config.password : current.password,
-      authType:
-        config.authType !== undefined ? config.authType : current.authType,
-      sncPartnerName:
-        config.sncPartnerName !== undefined
-          ? config.sncPartnerName
-          : current.sncPartnerName,
-      sncQop: config.sncQop !== undefined ? config.sncQop : current.sncQop,
-      sncLib: config.sncLib !== undefined ? config.sncLib : current.sncLib,
-      sncMyName:
-        config.sncMyName !== undefined ? config.sncMyName : current.sncMyName,
       sapClient:
         config.sapClient !== undefined ? config.sapClient : current.sapClient,
       language:
@@ -513,13 +485,12 @@ export class SafeAbapSessionStore implements ISessionStore {
   }
 }
 
-/** The declared authType wins; without one it is what the credentials imply. */
-function inferAuthType(
-  obj: Record<string, unknown>,
-): AbapSessionData['authType'] {
-  if (obj.authType) return obj.authType as AbapSessionData['authType'];
-  if (obj.sessionCookies) return 'saml';
-  if (obj.username && obj.password) return 'basic';
-  if (obj.sncPartnerName) return 'snc';
-  return 'jwt';
+/** The session without any type's credential fields or its type. */
+function withoutCredential(session: AbapSessionData): AbapSessionData {
+  const rest: AbapSessionData & AbapCredential = { ...session };
+  delete rest.authType;
+  for (const fields of Object.values(MODE_FIELDS)) {
+    for (const field of fields) delete rest[field];
+  }
+  return rest;
 }

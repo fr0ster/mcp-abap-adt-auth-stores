@@ -19,6 +19,12 @@ import type {
 } from '@mcp-abap-adt/interfaces-auth-sap';
 import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
 import { StorageError } from '../../errors/StoreErrors';
+import {
+  credentialOf,
+  inferAuthType,
+  toCredential,
+  updateCredential,
+} from '../../storage/abap/abapCredential';
 import { loadEnvFile } from '../../storage/abap/envLoader';
 import { saveTokenToEnv } from '../../storage/abap/tokenStorage';
 import { formatToken } from '../../utils/formatting';
@@ -101,36 +107,12 @@ export class AbapSessionStore implements ISessionStore {
       language: obj.language as string | undefined,
     };
 
-    // The declared authType wins; without one, infer it from what is given.
-    const type =
-      (obj.authType as AbapSessionData['authType']) ??
-      (obj.sessionCookies
-        ? 'saml'
-        : obj.username && obj.password
-          ? 'basic'
-          : obj.sncPartnerName
-            ? 'snc'
-            : 'jwt');
-    result.authType = type;
-    const token = (obj.authorizationToken || obj.jwtToken || '') as string;
-
-    if (type === 'saml') {
-      result.sessionCookies = obj.sessionCookies as string | undefined;
-      result.jwtToken = '';
-    } else if (type === 'basic') {
-      result.username = obj.username as string | undefined;
-      result.password = obj.password as string | undefined;
-      result.jwtToken = token;
-    } else if (type === 'snc') {
-      result.sncPartnerName = obj.sncPartnerName as string | undefined;
-      result.sncQop = obj.sncQop as string | undefined;
-      result.sncLib = obj.sncLib as string | undefined;
-      result.sncMyName = obj.sncMyName as string | undefined;
-      result.jwtToken = '';
-    } else {
-      result.jwtToken = token;
-    }
-
+    // The declared authType wins; without one, the credential implies it
+    // (inferAuthType). With neither, no credential is written and the file's
+    // credential and SAP_AUTH_TYPE stay as they are.
+    const given = toCredential(obj);
+    const type = inferAuthType(given);
+    if (type) Object.assign(result, credentialOf(given, type));
     return result;
   }
 
@@ -412,18 +394,9 @@ export class AbapSessionStore implements ISessionStore {
       return null;
     }
 
-    // The declared type wins; a file without one is inferred as it always was
-    const type =
-      sessionConfig.authType ??
-      (sessionConfig.sessionCookies
-        ? 'saml'
-        : !sessionConfig.jwtToken &&
-            sessionConfig.username &&
-            sessionConfig.password
-          ? 'basic'
-          : !sessionConfig.jwtToken && sessionConfig.sncPartnerName
-            ? 'snc'
-            : 'jwt');
+    // The loader has already decided the type: SAP_AUTH_TYPE, or inferred as
+    // 1.x did. A file with no credential at all is treated as jwt (and has none).
+    const type = sessionConfig.authType ?? 'jwt';
 
     // SNC auth: partner name, no token or password
     if (type === 'snc') {
@@ -649,17 +622,18 @@ export class AbapSessionStore implements ISessionStore {
         `Creating new session for ${destination} via setConnectionConfig: serviceUrl(${serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars${formatToken(config.authorizationToken) ? `, ${formatToken(config.authorizationToken)}` : ''})`,
       );
 
+      const next = updateCredential({}, toCredential(config));
       const newSession: IConfig = {
         serviceUrl: serviceUrl,
-        authorizationToken: config.authorizationToken || '',
-        sessionCookies: config.sessionCookies,
-        username: config.username,
-        password: config.password,
-        authType: config.authType,
-        sncPartnerName: config.sncPartnerName,
-        sncQop: config.sncQop,
-        sncLib: config.sncLib,
-        sncMyName: config.sncMyName,
+        authType: next.authType,
+        authorizationToken: next.jwtToken,
+        sessionCookies: next.sessionCookies,
+        username: next.username,
+        password: next.password,
+        sncPartnerName: next.sncPartnerName,
+        sncQop: next.sncQop,
+        sncLib: next.sncLib,
+        sncMyName: next.sncMyName,
         sapClient: config.sapClient,
         language: config.language,
       };
@@ -674,39 +648,21 @@ export class AbapSessionStore implements ISessionStore {
     this.log?.debug(
       `Updating connection config for existing session ${destination}: serviceUrl(${config.serviceUrl ? `${config.serviceUrl.substring(0, 40)}...` : 'unchanged'}), token(${config.authorizationToken?.length || 0} chars${formatToken(config.authorizationToken) ? `, ${formatToken(config.authorizationToken)}` : ''})`,
     );
-    // A call that carries a credential replaces the session's credential; one
-    // that carries none (a language, a client) leaves the credential as it was.
-    const carriesCredential = !!(
-      config.authorizationToken ||
-      config.sessionCookies ||
-      config.username ||
-      config.password ||
-      config.sncPartnerName ||
-      config.authType
-    );
-    const credential: IConfig = carriesCredential
-      ? {
-          authorizationToken: config.authorizationToken,
-          sessionCookies: config.sessionCookies,
-          username: config.username,
-          password: config.password,
-          authType: config.authType,
-          sncPartnerName: config.sncPartnerName,
-          sncQop: config.sncQop,
-          sncLib: config.sncLib,
-          sncMyName: config.sncMyName,
-        }
-      : {
-          authorizationToken: current.jwtToken,
-          sessionCookies: current.sessionCookies,
-          username: current.username,
-          password: current.password,
-          authType: current.authType,
-          sncPartnerName: current.sncPartnerName,
-          sncQop: current.sncQop,
-          sncLib: current.sncLib,
-          sncMyName: current.sncMyName,
-        };
+    // Same type (declared, or only the current type's fields given): merge
+    // field by field. Another type: replace, and the other types' fields go.
+    // No credential (a language, a client): the credential stays as it was.
+    const next = updateCredential(current, toCredential(config));
+    const credential: IConfig = {
+      authType: next.authType,
+      authorizationToken: next.jwtToken,
+      sessionCookies: next.sessionCookies,
+      username: next.username,
+      password: next.password,
+      sncPartnerName: next.sncPartnerName,
+      sncQop: next.sncQop,
+      sncLib: next.sncLib,
+      sncMyName: next.sncMyName,
+    };
     const updated: IConfig = {
       serviceUrl: config.serviceUrl || current.sapUrl,
       ...credential,
