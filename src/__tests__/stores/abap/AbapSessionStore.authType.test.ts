@@ -89,10 +89,11 @@ describe('AbapSessionStore - authType and SNC', () => {
     it('ignores an unknown SAP_AUTH_TYPE and infers', async () => {
       await write([
         'SAP_URL=https://s',
-        'SAP_JWT_TOKEN=tok',
+        'SAP_USERNAME=u',
+        'SAP_PASSWORD=p',
         'SAP_AUTH_TYPE=bogus',
       ]);
-      expect((await store.getConnectionConfig(dest))?.authType).toBe('jwt');
+      expect((await store.getConnectionConfig(dest))?.authType).toBe('basic');
     });
   });
 
