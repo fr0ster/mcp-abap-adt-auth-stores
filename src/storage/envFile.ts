@@ -9,6 +9,7 @@
  * line; a key name may be.
  */
 
+import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as dotenv from 'dotenv';
@@ -28,11 +29,6 @@ export function toError(error: unknown): Error & { code?: string } {
   const code = (error as { code?: unknown })?.code;
   if (typeof code === 'string') wrapped.code = code;
   return wrapped;
-}
-
-/** The key a line assigns, or undefined for a comment, a blank or other text. */
-function keyOfLine(line: string): string | undefined {
-  return /^\s*(?:export\s+)?([\w.-]+)\s*=/.exec(line)?.[1];
 }
 
 /**
@@ -85,52 +81,152 @@ export function formatEnvValue(key: string, value: string): string {
 }
 
 /**
- * Set or remove the given keys of an env file, atomically (a temporary file,
- * then a rename). `null` removes a key; a string sets it, in place when the key
- * is already there, else appended. Every line whose key is not given is kept
- * as it was. A new file is created readable by its owner alone; an existing
- * one keeps its mode.
+ * dotenv's own line pattern (dotenv 18, `parse`), with match indices: the
+ * rewriter finds a key exactly where dotenv finds it — `KEY=value`,
+ * `export KEY=value`, `KEY: value`, a quoted value spanning lines — so it
+ * never rewrites text dotenv reads as part of another key's value.
+ */
+const DOTENV_LINE =
+  /(?:^|^)\s*(?:export\s+)?([\w.-]+)(?:\s*=\s*?|:\s+?)(\s*'(?:\\'|[^'])*'|\s*"(?:\\"|[^"])*"|\s*`(?:\\`|[^`])*`|[^#\r\n]+)?\s*(?:#.*)?(?:$|$)/dgm;
+
+interface KeySpan {
+  key: string;
+  /** Start of the line the key is on. */
+  start: number;
+  /** End of the line the value ends on, before its line break. */
+  end: number;
+}
+
+/** Where each key assignment of a file is, as dotenv reads it. */
+function keySpans(content: string): KeySpan[] {
+  const spans: KeySpan[] = [];
+  const re = new RegExp(DOTENV_LINE.source, DOTENV_LINE.flags);
+  for (let m = re.exec(content); m !== null; m = re.exec(content)) {
+    if (m[0] === '') {
+      re.lastIndex++;
+      continue;
+    }
+    const indices = (m as RegExpExecArray & { indices: [number, number][] })
+      .indices;
+    const keyStart = indices[1][0];
+    const valueEnd = indices[2] ? indices[2][1] : indices[1][1];
+    const start = content.lastIndexOf('\n', keyStart - 1) + 1;
+    let end = content.indexOf('\n', valueEnd);
+    if (end === -1) end = content.length;
+    if (end > valueEnd && content[end - 1] === '\r') end--;
+    spans.push({ key: m[1], start, end });
+  }
+  return spans;
+}
+
+/** The line break right after `end`, if any. */
+function breakAt(content: string, end: number): number {
+  if (content.startsWith('\r\n', end)) return 2;
+  if (content[end] === '\n') return 1;
+  return 0;
+}
+
+/**
+ * Set or remove the given keys of an env file. `null` removes a key; a string
+ * sets it — in place of its first assignment, any other assignment of it
+ * removed — or appends it. Every other byte of the file stays: keys not given,
+ * comments, blank lines, line breaks (CRLF included). Keys are found where
+ * dotenv finds them (`DOTENV_LINE`); the result is parsed back, and if any key
+ * would not read as intended the file is left alone and the write refused,
+ * naming the file and the key — a hand-written file the stores cannot map
+ * safely. The stores write one key per line.
+ *
+ * Written through a temporary file of this writer's own (`wx`), then renamed.
+ * A new file is `0600`; an existing one keeps its owner's bits only — never
+ * widened. The caller holds the file's lock (`withFileLock`).
  */
 export function rewriteEnvKeys(
   filePath: string,
   updates: Record<string, string | null>,
 ): void {
-  const existing = readEnvFileOrNull(filePath);
-  const lines = existing === null ? [] : existing.split('\n');
-  // a trailing newline leaves one empty last element: keep it as the end
-  const hadTrailingNewline = lines.length > 0 && lines[lines.length - 1] === '';
-  if (hadTrailingNewline) lines.pop();
+  const existing = readEnvFileOrNull(filePath) ?? '';
+  const spans = keySpans(existing);
 
-  const pending = new Map(Object.entries(updates));
-  const written = new Set<string>();
-  const out: string[] = [];
-  for (const line of lines) {
-    const key = keyOfLine(line);
-    if (key === undefined || !pending.has(key)) {
-      out.push(line);
-      continue;
+  const edits: { start: number; end: number; text: string }[] = [];
+  const appended: string[] = [];
+  for (const [key, value] of Object.entries(updates)) {
+    const found = spans.filter((span) => span.key === key);
+    found.forEach((span, i) => {
+      if (i === 0 && value !== null) {
+        edits.push({
+          start: span.start,
+          end: span.end,
+          text: `${key}=${formatEnvValue(key, value)}`,
+        });
+      } else {
+        edits.push({
+          start: span.start,
+          end: span.end + breakAt(existing, span.end),
+          text: '',
+        });
+      }
+    });
+    if (found.length === 0 && value !== null) {
+      appended.push(`${key}=${formatEnvValue(key, value)}`);
     }
-    const value = pending.get(key);
-    // a key given more than once is written once, where it first was
-    if (value === null || value === undefined || written.has(key)) continue;
-    out.push(`${key}=${formatEnvValue(key, value)}`);
-    written.add(key);
   }
-  for (const [key, value] of pending) {
-    if (value === null || written.has(key)) continue;
-    out.push(`${key}=${formatEnvValue(key, value)}`);
+  let content = existing;
+  for (const edit of edits.sort((a, b) => b.start - a.start)) {
+    content =
+      content.slice(0, edit.start) + edit.text + content.slice(edit.end);
+  }
+  if (appended.length > 0) {
+    const eol = existing.includes('\r\n') ? '\r\n' : '\n';
+    if (content !== '' && !content.endsWith('\n')) content += eol;
+    content += appended.map((line) => line + eol).join('');
   }
 
+  const expected: Record<string, string> = dotenv.parse(existing);
+  for (const [key, value] of Object.entries(updates)) {
+    if (value === null) delete expected[key];
+    else expected[key] = value;
+  }
+  const actual = dotenv.parse(content);
+  for (const key of new Set([
+    ...Object.keys(expected),
+    ...Object.keys(actual),
+  ])) {
+    if (expected[key] !== actual[key]) {
+      throw new StorageError(
+        'write',
+        `Cannot rewrite ${filePath} safely: ${key} would not read back as written — keep one key per line, each value closed on its line`,
+      );
+    }
+  }
+
+  writeAtomically(filePath, content);
+}
+
+/**
+ * Write `content` to `filePath` through a temporary file of this writer's own,
+ * created exclusively, then a rename. The temporary file is removed when
+ * anything fails.
+ */
+function writeAtomically(filePath: string, content: string): void {
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const content = out.length > 0 ? `${out.join('\n')}\n` : '';
-  const tempFilePath = `${filePath}.tmp`;
+  let mode = 0o600;
   try {
-    const mode = existing === null ? 0o600 : fs.statSync(filePath).mode & 0o777;
-    fs.writeFileSync(tempFilePath, content, { encoding: 'utf8', mode });
+    mode = fs.statSync(filePath).mode & 0o600;
+  } catch {
+    // a new file
+  }
+  const tempFilePath = `${filePath}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
+  try {
+    fs.writeFileSync(tempFilePath, content, {
+      encoding: 'utf8',
+      mode,
+      flag: 'wx',
+    });
     fs.chmodSync(tempFilePath, mode);
     fs.renameSync(tempFilePath, filePath);
   } catch (error) {
+    fs.rmSync(tempFilePath, { force: true });
     const cause = toError(error);
     throw new StorageError(
       'write',
@@ -140,9 +236,9 @@ export function rewriteEnvKeys(
   }
 }
 
-/** Whether a file holds any key at all. */
+/** Whether a file holds any key at all, as dotenv reads it. */
 export function hasAnyKey(filePath: string): boolean {
   const content = readEnvFileOrNull(filePath);
   if (content === null) return false;
-  return content.split('\n').some((line) => keyOfLine(line) !== undefined);
+  return Object.keys(dotenv.parse(content)).length > 0;
 }
