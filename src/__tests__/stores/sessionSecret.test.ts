@@ -271,9 +271,9 @@ describe.each(VARIANTS)(
           .saveSession('D', { authorizationToken: TOKEN, expiresAt })
           .catch((e: unknown) => e);
         expect(failure).toBeInstanceOf(Error);
-        expect(
-          (failure as { missingFields?: string[] }).missingFields,
-        ).toEqual(['expiresAt']);
+        expect((failure as { missingFields?: string[] }).missingFields).toEqual(
+          ['expiresAt'],
+        );
         expect(await store.loadSession('D')).toEqual({
           authorizationToken: TOKEN,
           expiresAt: EXPIRES,
