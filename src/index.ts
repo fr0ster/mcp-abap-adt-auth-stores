@@ -27,6 +27,16 @@ export {
   SafeAbapSessionStore,
   SafeAbapSessionStore as SafeSamlSessionStore,
 } from './stores/abap/SafeAbapSessionStore';
+// Destination store: a destination's means in <dir>/<destination>.env
+export {
+  ABAP_DESTINATION_VARS,
+  type DestinationMeans,
+  type DestinationVariables,
+  EnvDestinationStore,
+  type EnvDestinationStoreOptions,
+  type MeansField,
+  XSUAA_DESTINATION_VARS,
+} from './stores/destination/EnvDestinationStore';
 // Env file stores (for --env=path scenarios)
 export { EnvFileSessionStore } from './stores/env/EnvFileSessionStore';
 export {
