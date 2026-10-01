@@ -1,514 +1,82 @@
 /**
- * Env File Session Store - reads session from a specific .env file
+ * Env File Session Store — the session secret in one given `.env` file.
  *
- * This store reads connection configuration from a .env file at a specified path.
- * Unlike other stores that work with directories, this one works with a single file.
- *
- * Use case: `mcp-abap-adt --env=/path/to/.env`
- *
- * The store reads initial config from .env file and can update JWT tokens back to the file.
- * For token refresh scenarios (JWT), the refreshed token is written back to the .env file.
+ * For `--env=/path/to/.env`: one file, whatever the destination. Holds the
+ * secret alone (auth-stores 3.0.0): `SAP_JWT_TOKEN` or
+ * `SAP_SESSION_COOKIES_B64`, `SAP_EXPIRES_AT`, `SAP_REFRESH_TOKEN`, read from
+ * the file and written back to it. Every other line — the URL, the type, a
+ * user and password, the client: means, read by `EnvDestinationStore` — is
+ * left as it is.
  */
 
-import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type {
-  IConfig,
-  IConnectionConfig,
-  ISessionStore,
-} from '@mcp-abap-adt/interfaces-auth-broker';
-import type { IAuthorizationConfig } from '@mcp-abap-adt/interfaces-auth-sap';
 import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
+import {
+  readFileSecret,
+  type SecretKeys,
+  writeFileSecret,
+} from '../../session/fileSecret';
+import { SecretSessionStore } from '../../session/SecretSessionStore';
+import type { SessionSecret } from '../../session/sessionSecret';
+import { ABAP_SESSION_VARS } from '../../utils/constants';
 
-/**
- * Internal session data structure
- */
-interface EnvSessionData {
-  serviceUrl: string;
-  sapClient?: string;
-  authType: 'basic' | 'jwt';
-  // Basic auth
-  username?: string;
-  password?: string;
-  // JWT auth
-  jwtToken?: string;
-  refreshToken?: string;
-  // UAA (for token refresh)
-  uaaUrl?: string;
-  uaaClientId?: string;
-  uaaClientSecret?: string;
-}
+const KEYS: SecretKeys = {
+  authorizationToken: ABAP_SESSION_VARS.AUTHORIZATION_TOKEN,
+  sessionCookies: ABAP_SESSION_VARS.SESSION_COOKIES_B64,
+  expiresAt: ABAP_SESSION_VARS.EXPIRES_AT,
+  refreshToken: ABAP_SESSION_VARS.REFRESH_TOKEN,
+};
 
-/**
- * Session store that reads from a specific .env file
- */
-export class EnvFileSessionStore implements ISessionStore {
+export class EnvFileSessionStore extends SecretSessionStore {
   private envFilePath: string;
-  private log?: ILogger;
-  private loadedData: EnvSessionData | null = null;
-  private inMemoryUpdates: Map<string, EnvSessionData> = new Map();
 
   /**
-   * Create a new EnvFileSessionStore
-   * @param envFilePath Absolute path to the .env file
+   * @param envFilePath Path to the .env file
    * @param log Optional logger
    */
   constructor(envFilePath: string, log?: ILogger) {
+    super({ name: 'EnvFileSessionStore', tokenOnly: false, log });
     this.envFilePath = path.resolve(envFilePath);
-    this.log = log;
   }
 
-  /**
-   * Get the auth type from the loaded .env file
-   */
-  getAuthType(): 'basic' | 'jwt' | null {
-    if (!this.loadedData) {
-      this.loadEnvFile();
-    }
-    return this.loadedData?.authType || null;
-  }
-
-  /**
-   * Parse .env file content into key-value pairs
-   */
-  private parseEnvContent(content: string): Record<string, string> {
-    const envVars: Record<string, string> = {};
-
-    for (const line of content.split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-
-      const eqIndex = trimmed.indexOf('=');
-      if (eqIndex === -1) continue;
-
-      const key = trimmed.substring(0, eqIndex).trim();
-      let value = trimmed.substring(eqIndex + 1);
-
-      // Remove inline comments (but be careful with URLs containing #)
-      // Only remove # comments that are preceded by whitespace
-      const commentMatch = value.match(/\s+#/);
-      if (commentMatch) {
-        value = value.substring(0, commentMatch.index).trim();
-      } else {
-        value = value.trim();
-      }
-
-      // Remove surrounding quotes
-      value = value.replace(/^["']+|["']+$/g, '').trim();
-
-      if (key) {
-        envVars[key] = value;
-      }
-    }
-
-    return envVars;
-  }
-
-  /**
-   * Load and parse the .env file
-   */
-  private loadEnvFile(): EnvSessionData | null {
-    if (this.loadedData) {
-      return this.loadedData;
-    }
-
-    if (!fs.existsSync(this.envFilePath)) {
-      this.log?.error(
-        `EnvFileSessionStore: .env file not found: ${this.envFilePath}`,
-      );
-      return null;
-    }
-
-    try {
-      const content = fs.readFileSync(this.envFilePath, 'utf8');
-      const envVars = this.parseEnvContent(content);
-
-      // Validate required fields
-      if (!envVars.SAP_URL) {
-        this.log?.error(`EnvFileSessionStore: .env file missing SAP_URL`);
-        return null;
-      }
-
-      // Auto-detect auth type: SAP_JWT_TOKEN presence implies JWT,
-      // otherwise fall back to SAP_AUTH_TYPE (default: basic)
-      const authType: 'basic' | 'jwt' = envVars.SAP_JWT_TOKEN
-        ? 'jwt'
-        : (envVars.SAP_AUTH_TYPE || 'basic') === 'jwt'
-          ? 'jwt'
-          : 'basic';
-
-      const data: EnvSessionData = {
-        serviceUrl: envVars.SAP_URL,
-        sapClient: envVars.SAP_CLIENT,
-        authType,
-      };
-
-      if (authType === 'basic') {
-        if (!envVars.SAP_USERNAME || !envVars.SAP_PASSWORD) {
-          this.log?.error(
-            `EnvFileSessionStore: .env file missing SAP_USERNAME or SAP_PASSWORD for basic auth`,
-          );
-          return null;
-        }
-        data.username = envVars.SAP_USERNAME;
-        data.password = envVars.SAP_PASSWORD;
-      } else if (authType === 'jwt') {
-        if (!envVars.SAP_JWT_TOKEN) {
-          this.log?.error(
-            `EnvFileSessionStore: .env file missing SAP_JWT_TOKEN for JWT auth`,
-          );
-          return null;
-        }
-        data.jwtToken = envVars.SAP_JWT_TOKEN;
-        data.refreshToken = envVars.SAP_REFRESH_TOKEN;
-        data.uaaUrl = envVars.SAP_UAA_URL;
-        data.uaaClientId = envVars.SAP_UAA_CLIENT_ID;
-        data.uaaClientSecret = envVars.SAP_UAA_CLIENT_SECRET;
-      }
-
-      this.loadedData = data;
-      this.log?.debug(`EnvFileSessionStore: loaded .env file`, {
-        serviceUrl: data.serviceUrl,
-        authType: data.authType,
-      });
-
-      return data;
-    } catch (error) {
-      this.log?.error(`EnvFileSessionStore: failed to read .env file`, {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return null;
-    }
-  }
-
-  /**
-   * Convert internal format to IConfig
-   */
-  private toIConfig(data: EnvSessionData): IConfig {
-    const config: IConfig = {
-      serviceUrl: data.serviceUrl,
-      sapClient: data.sapClient,
-      authType: data.authType,
-    };
-
-    if (data.authType === 'basic') {
-      config.username = data.username;
-      config.password = data.password;
-    } else if (data.authType === 'jwt') {
-      config.authorizationToken = data.jwtToken;
-      config.refreshToken = data.refreshToken;
-      config.uaaUrl = data.uaaUrl;
-      config.uaaClientId = data.uaaClientId;
-      config.uaaClientSecret = data.uaaClientSecret;
-    }
-
-    return config;
-  }
-
-  // ============================================================================
-  // ISessionStore implementation
-  // ============================================================================
-
-  async loadSession(destination: string): Promise<IConfig | null> {
-    // Check in-memory updates first (for token refresh)
-    const updated = this.inMemoryUpdates.get(destination);
-    if (updated) {
-      return this.toIConfig(updated);
-    }
-
-    // Load from .env file
-    const data = this.loadEnvFile();
-    if (!data) return null;
-
-    return this.toIConfig(data);
-  }
-
-  async saveSession(destination: string, config: IConfig): Promise<void> {
-    // Save to in-memory and write JWT changes to file
-    const data: EnvSessionData = {
-      serviceUrl: config.serviceUrl || this.loadedData?.serviceUrl || '',
-      sapClient: config.sapClient || this.loadedData?.sapClient,
-      authType:
-        (config.authType as 'basic' | 'jwt') ||
-        this.loadedData?.authType ||
-        'basic',
-      username: config.username,
-      password: config.password,
-      jwtToken: config.authorizationToken,
-      refreshToken: config.refreshToken,
-      uaaUrl: config.uaaUrl,
-      uaaClientId: config.uaaClientId,
-      uaaClientSecret: config.uaaClientSecret,
-    };
-
-    this.inMemoryUpdates.set(destination, data);
-
-    // Write JWT tokens back to file
-    if (data.authType === 'jwt' && data.jwtToken) {
-      await this.save();
-    }
-
-    this.log?.debug(`EnvFileSessionStore: saved session`, {
-      destination,
-      authType: data.authType,
-    });
-  }
-
-  async getConnectionConfig(
+  protected async readSecret(
     destination: string,
-  ): Promise<IConnectionConfig | null> {
-    // Check in-memory updates first
-    const updated = this.inMemoryUpdates.get(destination);
-    if (updated) {
-      return {
-        serviceUrl: updated.serviceUrl,
-        sapClient: updated.sapClient,
-        authType: updated.authType,
-        username: updated.username,
-        password: updated.password,
-        authorizationToken: updated.jwtToken,
-      };
-    }
-
-    const data = this.loadEnvFile();
-    if (!data) return null;
-
-    return {
-      serviceUrl: data.serviceUrl,
-      sapClient: data.sapClient,
-      authType: data.authType,
-      username: data.username,
-      password: data.password,
-      authorizationToken: data.jwtToken,
-    };
+  ): Promise<SessionSecret | null> {
+    return readFileSecret(this.envFilePath, KEYS, destination);
   }
 
-  async setConnectionConfig(
-    destination: string,
-    config: IConnectionConfig,
+  protected async writeSecret(
+    _destination: string,
+    next: SessionSecret,
   ): Promise<void> {
-    // Store in memory (merge with existing data)
-    const existing =
-      this.inMemoryUpdates.get(destination) ||
-      this.loadEnvFile() ||
-      ({} as EnvSessionData);
-
-    const data: EnvSessionData = {
-      ...existing,
-      serviceUrl: config.serviceUrl || existing.serviceUrl,
-      sapClient: config.sapClient || existing.sapClient,
-      authType:
-        (config.authType as 'basic' | 'jwt') || existing.authType || 'basic',
-      username: config.username || existing.username,
-      password: config.password || existing.password,
-      jwtToken: config.authorizationToken || existing.jwtToken,
-    };
-
-    this.inMemoryUpdates.set(destination, data);
-
-    // Write JWT token back to file if updated
-    if (data.authType === 'jwt' && config.authorizationToken) {
-      await this.save();
-    }
-
-    this.log?.debug(`EnvFileSessionStore: set connection config`, {
-      destination,
-      serviceUrl: data.serviceUrl,
-    });
+    writeFileSecret(this.envFilePath, KEYS, next);
   }
 
-  async getAuthorizationConfig(
-    destination: string,
-  ): Promise<IAuthorizationConfig | null> {
-    // Check in-memory updates first
-    const updated = this.inMemoryUpdates.get(destination);
-    if (updated && updated.authType === 'jwt') {
-      return {
-        uaaUrl: updated.uaaUrl || '',
-        uaaClientId: updated.uaaClientId || '',
-        uaaClientSecret: updated.uaaClientSecret || '',
-        refreshToken: updated.refreshToken,
-      };
-    }
-
-    const data = this.loadEnvFile();
-    if (!data || data.authType !== 'jwt') return null;
-
-    return {
-      uaaUrl: data.uaaUrl || '',
-      uaaClientId: data.uaaClientId || '',
-      uaaClientSecret: data.uaaClientSecret || '',
-      refreshToken: data.refreshToken,
-    };
+  /** Remove the secret keys from the file; every other line stays. */
+  async deleteSession(destination: string): Promise<void> {
+    await this.writeSecret(destination, {});
   }
 
-  async setAuthorizationConfig(
-    destination: string,
-    config: IAuthorizationConfig,
-  ): Promise<void> {
-    const existing =
-      this.inMemoryUpdates.get(destination) ||
-      this.loadEnvFile() ||
-      ({} as EnvSessionData);
-
-    const data: EnvSessionData = {
-      ...existing,
-      serviceUrl: existing.serviceUrl || '',
-      authType: existing.authType || 'jwt',
-      uaaUrl: config.uaaUrl,
-      uaaClientId: config.uaaClientId,
-      uaaClientSecret: config.uaaClientSecret,
-      refreshToken: config.refreshToken || existing.refreshToken,
-    };
-
-    this.inMemoryUpdates.set(destination, data);
-
-    // Write refresh token back to file if updated
-    if (config.refreshToken) {
-      await this.save();
-    }
-
-    this.log?.debug(`EnvFileSessionStore: set authorization config`, {
-      destination,
-    });
-  }
-
+  /** The stored access token. */
   async getToken(destination: string): Promise<string | undefined> {
-    // Check in-memory updates first (refreshed token)
-    const updated = this.inMemoryUpdates.get(destination);
-    if (updated?.jwtToken) {
-      return updated.jwtToken;
-    }
-
-    const data = this.loadEnvFile();
-    return data?.jwtToken;
+    return (await this.readSecret(destination))?.authorizationToken;
   }
 
+  /** Write an access token (an expiry stored with the old one is cleared). */
   async setToken(destination: string, token: string): Promise<void> {
-    const existing =
-      this.inMemoryUpdates.get(destination) ||
-      this.loadEnvFile() ||
-      ({} as EnvSessionData);
-
-    const data: EnvSessionData = {
-      ...existing,
-      serviceUrl: existing.serviceUrl || '',
-      authType: 'jwt',
-      jwtToken: token,
-    };
-
-    this.inMemoryUpdates.set(destination, data);
-
-    // Write to file
-    await this.save();
-
-    this.log?.debug(`EnvFileSessionStore: set token`, { destination });
+    await this.saveSession(destination, { authorizationToken: token });
   }
 
+  /** The stored refresh token. */
   async getRefreshToken(destination: string): Promise<string | undefined> {
-    const updated = this.inMemoryUpdates.get(destination);
-    if (updated?.refreshToken) {
-      return updated.refreshToken;
-    }
-
-    const data = this.loadEnvFile();
-    return data?.refreshToken;
+    return (await this.readSecret(destination))?.refreshToken;
   }
 
+  /** Write a refresh token. */
   async setRefreshToken(
     destination: string,
     refreshToken: string,
   ): Promise<void> {
-    const existing =
-      this.inMemoryUpdates.get(destination) ||
-      this.loadEnvFile() ||
-      ({} as EnvSessionData);
-
-    const data: EnvSessionData = {
-      ...existing,
-      serviceUrl: existing.serviceUrl || '',
-      authType: 'jwt',
-      refreshToken,
-    };
-
-    this.inMemoryUpdates.set(destination, data);
-
-    // Write to file
-    await this.save();
-
-    this.log?.debug(`EnvFileSessionStore: set refresh token`, { destination });
-  }
-
-  /**
-   * Save in-memory updates back to the .env file
-   * Updates only JWT-related variables (SAP_JWT_TOKEN, SAP_REFRESH_TOKEN)
-   */
-  async save(): Promise<void> {
-    // Get the latest data (either from in-memory or loaded)
-    const destinations = Array.from(this.inMemoryUpdates.keys());
-    if (destinations.length === 0) {
-      this.log?.debug(
-        `EnvFileSessionStore: nothing to save, no in-memory updates`,
-      );
-      return;
-    }
-
-    // Use the first destination (there should only be one for --env mode)
-    const data = this.inMemoryUpdates.get(destinations[0]);
-    if (!data) {
-      this.log?.debug(`EnvFileSessionStore: nothing to save, no data`);
-      return;
-    }
-
-    try {
-      // Read current file content
-      let content = '';
-      if (fs.existsSync(this.envFilePath)) {
-        content = fs.readFileSync(this.envFilePath, 'utf-8');
-      }
-
-      // Update or add JWT-related variables
-      const updates: Record<string, string | undefined> = {
-        SAP_JWT_TOKEN: data.jwtToken,
-        SAP_REFRESH_TOKEN: data.refreshToken,
-      };
-
-      for (const [key, value] of Object.entries(updates)) {
-        if (value === undefined) continue;
-
-        const regex = new RegExp(`^${key}=.*$`, 'm');
-        const newLine = `${key}=${value}`;
-
-        if (regex.test(content)) {
-          // Update existing line
-          content = content.replace(regex, newLine);
-        } else {
-          // Add new line at the end
-          content = `${content.trimEnd()}\n${newLine}\n`;
-        }
-      }
-
-      // Write back to file
-      fs.writeFileSync(this.envFilePath, content, 'utf-8');
-      this.log?.info(`EnvFileSessionStore: saved to file`, {
-        filePath: this.envFilePath,
-        hasJwtToken: !!data.jwtToken,
-        hasRefreshToken: !!data.refreshToken,
-      });
-    } catch (error) {
-      this.log?.error(`EnvFileSessionStore: failed to save to file`, {
-        error: error instanceof Error ? error.message : String(error),
-        filePath: this.envFilePath,
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Clear in-memory updates (useful for testing)
-   */
-  clear(): void {
-    this.inMemoryUpdates.clear();
-    this.loadedData = null;
+    await this.saveSession(destination, { refreshToken });
   }
 }

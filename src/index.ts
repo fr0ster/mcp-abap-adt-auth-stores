@@ -10,6 +10,7 @@ export {
   FileNotFoundError,
   InvalidConfigError,
   ParseError,
+  RefusedFieldsError,
   StorageError,
   StoreError,
 } from './errors/StoreErrors';
@@ -45,10 +46,12 @@ export {
 export {
   ABAP_AUTHORIZATION_VARS,
   ABAP_CONNECTION_VARS,
+  ABAP_SESSION_VARS,
   BTP_AUTHORIZATION_VARS,
   BTP_CONNECTION_VARS,
   XSUAA_AUTHORIZATION_VARS,
   XSUAA_CONNECTION_VARS,
+  XSUAA_SESSION_VARS,
 } from './utils/constants';
 export { EnvFileHandler } from './utils/EnvFileHandler';
 export { JsonFileHandler } from './utils/JsonFileHandler';

@@ -103,3 +103,32 @@ export const BTP_CONNECTION_VARS = {
   /** Language (optional) */
   SAP_LANGUAGE: 'BTP_LANGUAGE',
 } as const;
+
+/**
+ * The session secret's keys in an ABAP session file (auth-stores 3.0.0).
+ * `AbapSessionStore` and `EnvFileSessionStore` read and write these and no
+ * other key.
+ */
+export const ABAP_SESSION_VARS = {
+  /** Access token (JWT) */
+  AUTHORIZATION_TOKEN: 'SAP_JWT_TOKEN',
+  /** Session cookies, base64-encoded */
+  SESSION_COOKIES_B64: 'SAP_SESSION_COOKIES_B64',
+  /** When the token or cookies stop being valid, epoch milliseconds */
+  EXPIRES_AT: 'SAP_EXPIRES_AT',
+  /** Refresh token */
+  REFRESH_TOKEN: 'SAP_REFRESH_TOKEN',
+} as const;
+
+/**
+ * The session secret's keys in an XSUAA session file (auth-stores 3.0.0).
+ * `XsuaaSessionStore` reads and writes these and no other key.
+ */
+export const XSUAA_SESSION_VARS = {
+  /** Access token (JWT) */
+  AUTHORIZATION_TOKEN: 'XSUAA_JWT_TOKEN',
+  /** When the token stops being valid, epoch milliseconds */
+  EXPIRES_AT: 'XSUAA_EXPIRES_AT',
+  /** Refresh token */
+  REFRESH_TOKEN: 'XSUAA_REFRESH_TOKEN',
+} as const;

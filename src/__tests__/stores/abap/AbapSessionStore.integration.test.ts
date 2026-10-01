@@ -1,11 +1,14 @@
 /**
- * Integration tests for AbapSessionStore
- * Tests with real .env files from test-config.yaml
+ * Integration tests for AbapSessionStore — with the real sessions directory named in
+ * tests/test-config.yaml. Without that file (the template's placeholders), each
+ * case returns at once, saying so.
+ *
+ * The write case writes a destination of its own and removes it: it never
+ * touches the configured destination's real session.
  */
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import type { IConfig } from '@mcp-abap-adt/interfaces-auth-broker';
 import { AbapSessionStore } from '../../../stores/abap/AbapSessionStore';
 import {
   getAbapDestination,
@@ -27,144 +30,57 @@ describe('AbapSessionStore Integration', () => {
   };
 
   const config = loadTestConfig();
-  const abapDestination = getAbapDestination(config);
+  const destination = getAbapDestination(config);
   const sessionsDir = getSessionsDir(config);
-  const hasRealAbapConfig = hasRealConfig(config, 'abap');
+  const hasReal = hasRealConfig(config, 'abap');
 
-  describe('Real file operations', () => {
-    it('should load ABAP session from real .env file', async () => {
-      if (!hasRealAbapConfig) {
-        console.warn('⚠️  Skipping ABAP session load test - no real config');
-        return;
+  it('loads the configured session from its real .env file: the secret alone', async () => {
+    if (!hasReal || !destination || !sessionsDir) {
+      console.warn('⚠️  Skipping ABAP session load test - no real config');
+      return;
+    }
+    const store = new AbapSessionStore(sessionsDir);
+    const session = await store.loadSession(destination);
+    if (session) {
+      for (const key of Object.keys(session)) {
+        expect([
+          'authorizationToken',
+          'sessionCookies',
+          'expiresAt',
+          'refreshToken',
+        ]).toContain(key);
       }
+    }
+    expect(await store.getAuthorizationConfig(destination)).toBeNull();
+  }, 10000);
 
-      if (!abapDestination || !sessionsDir) {
-        console.warn(
-          '⚠️  Skipping ABAP session load test - missing required config',
-        );
-        return;
-      }
-
-      const store = new AbapSessionStore(sessionsDir);
-
-      const session = await store.loadSession(abapDestination);
-
-      // Session may not exist, but store should not throw error
-      expect(session).toBeDefined();
-    }, 10000);
-
-    it('should save and load ABAP session', async () => {
-      if (!hasRealAbapConfig) {
-        console.warn(
-          '⚠️  Skipping ABAP session save/load test - no real config',
-        );
-        return;
-      }
-
-      if (!abapDestination || !sessionsDir) {
-        console.warn(
-          '⚠️  Skipping ABAP session save/load test - missing required config',
-        );
-        return;
-      }
-      if (!(await canWrite(sessionsDir))) {
-        console.warn(
-          '⚠️  Skipping ABAP session save/load test - sessions directory not writable',
-        );
-        return;
-      }
-
-      const store = new AbapSessionStore(sessionsDir);
-
-      // Create test session config
-      const testSession: IConfig = {
-        serviceUrl: 'https://test.sap.com',
+  it('saves, loads and removes a session of its own in the real directory', async () => {
+    if (!hasReal || !sessionsDir) {
+      console.warn('⚠️  Skipping ABAP session save/load test - no real config');
+      return;
+    }
+    if (!(await canWrite(sessionsDir))) {
+      console.warn(
+        '⚠️  Skipping ABAP session save/load test - sessions directory not writable',
+      );
+      return;
+    }
+    const own = `auth-stores-it-${Date.now().toString(36)}`;
+    const store = new AbapSessionStore(sessionsDir);
+    try {
+      await store.saveSession(own, {
         authorizationToken: 'test-jwt-token',
+        expiresAt: 1_900_000_000_000,
         refreshToken: 'test-refresh-token',
-        uaaUrl: 'https://test.uaa.com',
-        uaaClientId: 'test-client-id',
-        uaaClientSecret: 'test-client-secret',
-        sapClient: '001',
-        language: 'EN',
-      };
-
-      // Save session
-      await store.saveSession(abapDestination, testSession);
-
-      // Load session
-      const loadedSession = await store.loadSession(abapDestination);
-
-      expect(loadedSession).toBeDefined();
-      expect(loadedSession).not.toBeNull();
-
-      if (loadedSession) {
-        expect(loadedSession.serviceUrl).toBe(testSession.serviceUrl);
-        expect(loadedSession.authorizationToken).toBe(
-          testSession.authorizationToken,
-        );
-        expect(loadedSession.refreshToken).toBe(testSession.refreshToken);
-        expect(loadedSession.uaaUrl).toBe(testSession.uaaUrl);
-        expect(loadedSession.uaaClientId).toBe(testSession.uaaClientId);
-        expect(loadedSession.uaaClientSecret).toBe(testSession.uaaClientSecret);
-        expect(loadedSession.sapClient).toBe(testSession.sapClient);
-        expect(loadedSession.language).toBe(testSession.language);
-      }
-
-      // Clean up - delete test session
-      await store.deleteSession(abapDestination);
-    }, 10000);
-
-    it('should get authorization config from real session', async () => {
-      if (!hasRealAbapConfig) {
-        console.warn(
-          '⚠️  Skipping ABAP authorization config test - no real config',
-        );
-        return;
-      }
-
-      if (!abapDestination || !sessionsDir) {
-        console.warn(
-          '⚠️  Skipping ABAP authorization config test - missing required config',
-        );
-        return;
-      }
-
-      const store = new AbapSessionStore(sessionsDir);
-
-      const authConfig = await store.getAuthorizationConfig(abapDestination);
-
-      // May be null if session doesn't exist
-      if (authConfig) {
-        expect(authConfig.uaaUrl).toBeDefined();
-        expect(authConfig.uaaClientId).toBeDefined();
-        expect(authConfig.uaaClientSecret).toBeDefined();
-      }
-    }, 10000);
-
-    it('should get connection config from real session', async () => {
-      if (!hasRealAbapConfig) {
-        console.warn(
-          '⚠️  Skipping ABAP connection config test - no real config',
-        );
-        return;
-      }
-
-      if (!abapDestination || !sessionsDir) {
-        console.warn(
-          '⚠️  Skipping ABAP connection config test - missing required config',
-        );
-        return;
-      }
-
-      const store = new AbapSessionStore(sessionsDir);
-
-      const connConfig = await store.getConnectionConfig(abapDestination);
-
-      // May be null if session doesn't exist
-      if (connConfig) {
-        expect(connConfig.serviceUrl).toBeDefined();
-        expect(connConfig.authorizationToken).toBeDefined();
-      }
-    }, 10000);
-  });
+      });
+      expect(await store.loadSession(own)).toEqual({
+        authorizationToken: 'test-jwt-token',
+        expiresAt: 1_900_000_000_000,
+        refreshToken: 'test-refresh-token',
+      });
+    } finally {
+      await store.deleteSession(own);
+    }
+    expect(await store.loadSession(own)).toBeNull();
+  }, 10000);
 });

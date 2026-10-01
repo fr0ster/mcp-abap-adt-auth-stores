@@ -81,3 +81,23 @@ export class StorageError extends StoreError {
     Object.setPrototypeOf(this, StorageError.prototype);
   }
 }
+
+/**
+ * Error thrown when a write carries fields the store does not hold.
+ *
+ * The session stores hold the session secret alone and refuse means (the URL,
+ * the type and grant, a user and password, the SNC, OIDC and SAML settings,
+ * the client, `sapClient`, `language`); the destination store holds means alone
+ * and refuses the secret. The message and `fields` name the fields — never a
+ * value: many of them are secrets.
+ */
+export class RefusedFieldsError extends StoreError {
+  public readonly fields: string[];
+
+  constructor(message: string, fields: string[]) {
+    super(message, STORE_ERROR_CODES.INVALID_CONFIG);
+    this.name = 'RefusedFieldsError';
+    this.fields = fields;
+    Object.setPrototypeOf(this, RefusedFieldsError.prototype);
+  }
+}
