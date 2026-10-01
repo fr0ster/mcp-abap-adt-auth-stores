@@ -1,6 +1,6 @@
 {
   "name": "@mcp-abap-adt/auth-stores",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Stores for MCP ABAP ADT auth-broker - BTP, ABAP, and XSUAA implementations",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -55,7 +55,8 @@
   },
   "dependencies": {
     "@mcp-abap-adt/interfaces-auth": "^3.0.0",
-    "@mcp-abap-adt/interfaces-auth-sap": "^1.1.0",
+    "@mcp-abap-adt/interfaces-auth-broker": "^1.0.0",
+    "@mcp-abap-adt/interfaces-auth-sap": "^2.0.0",
     "@mcp-abap-adt/interfaces-utils": "^1.1.0",
     "dotenv": "^18.0.4"
   },

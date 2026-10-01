@@ -10,6 +10,7 @@ export {
   FileNotFoundError,
   InvalidConfigError,
   ParseError,
+  RefusedFieldsError,
   StorageError,
   StoreError,
 } from './errors/StoreErrors';
@@ -26,6 +27,16 @@ export {
   SafeAbapSessionStore,
   SafeAbapSessionStore as SafeSamlSessionStore,
 } from './stores/abap/SafeAbapSessionStore';
+// Destination store: a destination's means in <dir>/<destination>.env
+export {
+  ABAP_DESTINATION_VARS,
+  type DestinationMeans,
+  type DestinationVariables,
+  EnvDestinationStore,
+  type EnvDestinationStoreOptions,
+  type MeansField,
+  XSUAA_DESTINATION_VARS,
+} from './stores/destination/EnvDestinationStore';
 // Env file stores (for --env=path scenarios)
 export { EnvFileSessionStore } from './stores/env/EnvFileSessionStore';
 export {
@@ -45,10 +56,12 @@ export {
 export {
   ABAP_AUTHORIZATION_VARS,
   ABAP_CONNECTION_VARS,
+  ABAP_SESSION_VARS,
   BTP_AUTHORIZATION_VARS,
   BTP_CONNECTION_VARS,
   XSUAA_AUTHORIZATION_VARS,
   XSUAA_CONNECTION_VARS,
+  XSUAA_SESSION_VARS,
 } from './utils/constants';
 export { EnvFileHandler } from './utils/EnvFileHandler';
 export { JsonFileHandler } from './utils/JsonFileHandler';

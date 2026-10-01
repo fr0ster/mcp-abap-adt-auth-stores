@@ -1,447 +1,82 @@
 /**
- * XSUAA Session Store - stores XSUAA session data (same as base BTP, without sapUrl)
+ * XSUAA Session Store — the session secret in `{destination}.env` files.
  *
- * This is an alias for BtpSessionStore for backward compatibility.
- * Stores to {destination}.env files with XSUAA_* variables.
+ * Holds the secret alone (auth-stores 3.0.0): `XSUAA_JWT_TOKEN`,
+ * `XSUAA_EXPIRES_AT`, `XSUAA_REFRESH_TOKEN`. An XSUAA session is a token:
+ * cookies are refused, and so is a write that leaves the session without a
+ * token. A write touches only those keys; every other line of the file stays
+ * as it is — the 2.x keys `XSUAA_MCP_URL` and `XSUAA_UAA_*`, and the 1.x
+ * `SAP_*` keys 2.x deleted.
  */
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type {
-  IAuthorizationConfig,
-  IConfig,
-  IConnectionConfig,
-  ISessionStore,
-} from '@mcp-abap-adt/interfaces-auth-sap';
 import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
-import { StorageError } from '../../errors/StoreErrors';
-import { loadXsuaaEnvFile } from '../../storage/xsuaa/xsuaaEnvLoader';
-import { saveXsuaaTokenToEnv } from '../../storage/xsuaa/xsuaaTokenStorage';
-import { formatToken } from '../../utils/formatting';
+import {
+  readFileSecret,
+  type SecretKeys,
+  writeFileSecret,
+} from '../../session/fileSecret';
+import { SecretSessionStore } from '../../session/SecretSessionStore';
+import type { SessionSecret } from '../../session/sessionSecret';
+import { assertDestinationName } from '../../storage/destinationName';
+import { withFileLock } from '../../storage/fileLock';
+import { XSUAA_SESSION_VARS } from '../../utils/constants';
 
-// Internal type for XSUAA session storage (same as base BTP, without sapUrl)
-interface XsuaaSessionData {
-  mcpUrl?: string;
-  jwtToken: string;
-  refreshToken?: string;
-  uaaUrl?: string;
-  uaaClientId?: string;
-  uaaClientSecret?: string;
-}
+const KEYS: SecretKeys = {
+  authorizationToken: XSUAA_SESSION_VARS.AUTHORIZATION_TOKEN,
+  expiresAt: XSUAA_SESSION_VARS.EXPIRES_AT,
+  refreshToken: XSUAA_SESSION_VARS.REFRESH_TOKEN,
+};
 
 /**
- * XSUAA Session Store implementation
- *
- * Stores session data in {destination}.env files using XSUAA_* variables.
  * Reads and writes {destination}.env in the constructor's directory. It does
- * not search other locations: no store uses `resolveSearchPaths`.
+ * not search other locations.
  */
-export class XsuaaSessionStore implements ISessionStore {
+export class XsuaaSessionStore extends SecretSessionStore {
   protected directory: string;
-  private log?: ILogger;
-  private defaultServiceUrl: string;
 
   /**
-   * Create a new XsuaaSessionStore instance
-   * @param directory Directory where session .env files are located
-   * @param defaultServiceUrl Default service URL (required for XSUAA - cannot be obtained from service key)
-   * @param log Optional logger for logging operations
+   * @param directory Directory where session .env files are located (created if missing)
+   * @param log Optional logger
    */
-  constructor(directory: string, defaultServiceUrl: string, log?: ILogger) {
+  constructor(directory: string, log?: ILogger) {
+    super({ name: 'XsuaaSessionStore', tokenOnly: true, log });
     this.directory = directory;
-    this.defaultServiceUrl = defaultServiceUrl;
-    this.log = log;
-
-    // Ensure directory exists - create if it doesn't
     if (!fs.existsSync(directory)) {
       fs.mkdirSync(directory, { recursive: true });
       this.log?.debug(`Created session directory: ${directory}`);
     }
   }
-  /**
-   * Get file name for destination
-   * @param destination Destination name
-   * @returns File name (e.g., "mcp.env")
-   */
-  protected getFileName(destination: string): string {
-    return `${destination}.env`;
+
+  private fileOf(destination: string): string {
+    assertDestinationName(destination);
+    return path.join(this.directory, `${destination}.env`);
   }
 
-  /**
-   * Load session from file
-   * @param filePath Path to session file
-   * @returns Parsed XsuaaSessionData or null if invalid
-   */
-  protected async loadFromFile(filePath: string): Promise<unknown | null> {
-    // Extract destination from file path
-    const fileName = path.basename(filePath);
-    const destination = fileName.replace(/\.env$/, '');
+  protected async exclusive<T>(
+    destination: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    return withFileLock(this.fileOf(destination), fn);
+  }
 
-    // Load from .env file using XSUAA env loader (reads XSUAA_* variables)
-    const xsuaaConfig = await loadXsuaaEnvFile(
+  protected async readSecret(
+    destination: string,
+    forWrite = false,
+  ): Promise<SessionSecret | null> {
+    return readFileSecret(
+      this.fileOf(destination),
+      KEYS,
       destination,
-      this.directory,
-      this.log,
+      forWrite,
     );
-    if (!xsuaaConfig) {
-      return null;
-    }
-
-    return xsuaaConfig;
   }
 
-  /**
-   * Convert IConfig to internal format for ENV file storage
-   * @param config IConfig to convert
-   * @returns Internal format (XsuaaSessionData)
-   */
-  protected convertToInternalFormat(config: IConfig): Record<string, unknown> {
-    const obj = config as Record<string, unknown>;
-    // Convert IConfig format (serviceUrl, authorizationToken) to internal format (mcpUrl, jwtToken)
-    return {
-      jwtToken: (obj.authorizationToken || obj.jwtToken) as string,
-      mcpUrl: (obj.serviceUrl || obj.mcpUrl) as string | undefined,
-      refreshToken: obj.refreshToken as string | undefined,
-      uaaUrl: obj.uaaUrl as string | undefined,
-      uaaClientId: obj.uaaClientId as string | undefined,
-      uaaClientSecret: obj.uaaClientSecret as string | undefined,
-    };
-  }
-
-  /**
-   * Save session to ENV file
-   * @param filePath Path to session file
-   * @param config Internal format (XsuaaSessionData) for ENV file
-   */
-  protected async saveToFile(
-    filePath: string,
-    config: Record<string, unknown>,
+  protected async writeSecret(
+    destination: string,
+    next: SessionSecret,
   ): Promise<void> {
-    // Type guard - ensure it's XSUAA config (no sapUrl, no abapUrl)
-    if (!config || typeof config !== 'object') {
-      throw new Error('XsuaaSessionStore can only store XSUAA sessions');
-    }
-
-    // Reject ABAP sessions (has sapUrl)
-    if ('sapUrl' in config) {
-      throw new Error('XsuaaSessionStore can only store XSUAA sessions');
-    }
-
-    // Reject BTP sessions with abapUrl (that's for ABAP store)
-    if ('abapUrl' in config) {
-      throw new Error('XsuaaSessionStore can only store XSUAA sessions');
-    }
-
-    // Validate required fields
-    // Allow empty string for jwtToken (can be set later via setConnectionConfig)
-    if (config.jwtToken === undefined || config.jwtToken === null) {
-      throw new Error('XSUAA session config missing required field: jwtToken');
-    }
-
-    // Extract destination from file path
-    const fileName = path.basename(filePath);
-    const destination = fileName.replace(/\.env$/, '');
-    const savePath = path.dirname(filePath);
-
-    // Save using XSUAA token storage
-    const xsuaaData = config as unknown as XsuaaSessionData;
-    await saveXsuaaTokenToEnv(destination, savePath, xsuaaData, this.log);
+    writeFileSecret(this.fileOf(destination), KEYS, next);
   }
-
-  /**
-   * Save session configuration for destination
-   * @param destination Destination name (e.g., "TRIAL" or "mcp")
-   * @param config Session configuration to save
-   */
-  async saveSession(destination: string, config: IConfig): Promise<void> {
-    this.log?.debug(`Saving session for destination: ${destination}`);
-    const fileName = `${destination}.env`;
-    const filePath = path.join(this.directory, fileName);
-
-    // Ensure directory exists
-    if (!fs.existsSync(this.directory)) {
-      this.log?.debug(`Creating directory: ${this.directory}`);
-      fs.mkdirSync(this.directory, { recursive: true });
-    }
-
-    // Convert IConfig to internal format for ENV file
-    const internalConfig = this.convertToInternalFormat(config);
-    const obj = config as Record<string, unknown>;
-    const token = obj.authorizationToken || obj.jwtToken;
-    const tokenLength = token ? String(token).length : 0;
-    const formattedToken = formatToken(String(token || ''));
-    const formattedRefreshToken = formatToken(
-      typeof obj.refreshToken === 'string' ? obj.refreshToken : undefined,
-    );
-    const hasRefreshToken = !!obj.refreshToken;
-    this.log?.info(
-      `Session saved for ${destination}: token(${tokenLength} chars${formattedToken ? `, ${formattedToken}` : ''}), refreshToken(${formattedRefreshToken || 'none'}), serviceUrl(${obj.serviceUrl || obj.mcpUrl ? `${String(obj.serviceUrl || obj.mcpUrl).substring(0, 40)}...` : 'none'})`,
-    );
-    await this.saveToFile(filePath, internalConfig);
-  }
-
-  /**
-   * Delete session for destination
-   * @param destination Destination name (e.g., "TRIAL" or "mcp")
-   */
-  async deleteSession(destination: string): Promise<void> {
-    const fileName = `${destination}.env`;
-    const filePath = path.join(this.directory, fileName);
-
-    if (fs.existsSync(filePath)) {
-      this.log?.debug(`Deleting session for destination: ${destination}`);
-      fs.unlinkSync(filePath);
-      this.log?.info(`Session deleted for destination: ${destination}`);
-    } else {
-      this.log?.debug(`Session file not found for deletion: ${destination}`);
-    }
-  }
-
-  /**
-   * Load session configuration for destination
-   * Returns optional composition of IAuthorizationConfig and IConnectionConfig
-   * @param destination Destination name
-   * @returns IConfig with actual values or null if not found
-   */
-  async loadSession(destination: string): Promise<IConfig | null> {
-    this.log?.debug(`Loading session for destination: ${destination}`);
-    const authConfig = await this.getAuthorizationConfig(destination);
-    const connConfig = await this.getConnectionConfig(destination);
-
-    // Return null if both are null, otherwise return composition (even if one is null)
-    if (!authConfig && !connConfig) {
-      this.log?.debug(`Session not found for destination: ${destination}`);
-      return null;
-    }
-
-    const tokenLength = connConfig?.authorizationToken?.length || 0;
-    const formattedToken = formatToken(connConfig?.authorizationToken);
-    const authorization = this.authorizationFieldsOf(
-      await this.loadRawSession(destination),
-    );
-    const formattedRefreshToken = formatToken(authorization.refreshToken);
-    this.log?.info(
-      `Session loaded for ${destination}: token(${tokenLength} chars${formattedToken ? `, ${formattedToken}` : ''}), refreshToken(${formattedRefreshToken || 'none'}), serviceUrl(${connConfig?.serviceUrl ? `${connConfig.serviceUrl.substring(0, 40)}...` : 'none'})`,
-    );
-    return {
-      ...(authConfig || {}),
-      ...(connConfig || {}),
-      ...authorization,
-    };
-  }
-
-  /**
-   * The authorization fields the session holds, each on its own.
-   *
-   * `getAuthorizationConfig` answers only a complete config — URL, client ID
-   * and secret — and `loadSession` used to take the refresh token from it
-   * alone. A session holding a refresh token but no client secret (the broker
-   * keeps the secret in the service key, not here) then lost its refresh
-   * token on every load, and the next expiry meant a new login. The ABAP
-   * stores read these fields from the session directly; so does this.
-   */
-  private authorizationFieldsOf(
-    raw: XsuaaSessionData | null,
-  ): Partial<IAuthorizationConfig> {
-    const fields: Partial<IAuthorizationConfig> = {};
-    if (raw?.uaaUrl) fields.uaaUrl = raw.uaaUrl;
-    if (raw?.uaaClientId) fields.uaaClientId = raw.uaaClientId;
-    if (raw?.uaaClientSecret) fields.uaaClientSecret = raw.uaaClientSecret;
-    if (raw?.refreshToken) fields.refreshToken = raw.refreshToken;
-    return fields;
-  }
-
-  /**
-   * Load raw session data (internal representation)
-   * Used internally for getAuthorizationConfig, getConnectionConfig, setAuthorizationConfig and setConnectionConfig
-   */
-  private async loadRawSession(
-    destination: string,
-  ): Promise<XsuaaSessionData | null> {
-    const fileName = `${destination}.env`;
-    const sessionPath = path.join(this.directory, fileName);
-
-    // No existsSync pre-check: it answered false for an untraversable
-    // directory. The loader answers a missing file with null itself.
-    try {
-      const raw = await this.loadFromFile(sessionPath);
-      if (!raw || !isXsuaaSessionConfig(raw)) {
-        this.log?.debug(
-          `Invalid session format for ${destination}: missing required fields (jwtToken)`,
-        );
-        return null;
-      }
-      return raw;
-    } catch (error) {
-      // The file is there and could not be read — not "no session". A null
-      // here made an unreadable session look absent, so the caller logged in
-      // again or reported a missing field instead of the file and its error.
-      // A missing file never reaches this catch: the loader answers it null.
-      const cause = error instanceof Error ? error : new Error(String(error));
-      throw new StorageError(
-        'read',
-        `Cannot read the session for "${destination}": ${cause.message}`,
-        cause,
-      );
-    }
-  }
-
-  async getConnectionConfig(
-    destination: string,
-  ): Promise<IConnectionConfig | null> {
-    const sessionConfig = await this.loadRawSession(destination);
-    if (!sessionConfig) {
-      this.log?.debug(`Connection config not found for ${destination}`);
-      return null;
-    }
-
-    // Return null if jwtToken is undefined or null (but allow empty string)
-    if (
-      sessionConfig.jwtToken === undefined ||
-      sessionConfig.jwtToken === null
-    ) {
-      this.log?.warn(
-        `Connection config for ${destination} missing required field: jwtToken`,
-      );
-      return null;
-    }
-
-    this.log?.debug(
-      `Connection config loaded for ${destination}: token(${sessionConfig.jwtToken.length} chars${formatToken(sessionConfig.jwtToken) ? `, ${formatToken(sessionConfig.jwtToken)}` : ''}), serviceUrl(${sessionConfig.mcpUrl ? `${sessionConfig.mcpUrl.substring(0, 40)}...` : 'none'})`,
-    );
-    return {
-      serviceUrl: sessionConfig.mcpUrl, // May be undefined for XSUAA
-      authorizationToken: sessionConfig.jwtToken,
-    };
-  }
-
-  async setConnectionConfig(
-    destination: string,
-    config: IConnectionConfig,
-  ): Promise<void> {
-    const current = await this.loadRawSession(destination);
-
-    if (!current) {
-      // Session doesn't exist - create new one
-      // For XSUAA, use config.serviceUrl if provided, otherwise use defaultServiceUrl (required)
-      const serviceUrl = config.serviceUrl || this.defaultServiceUrl;
-      this.log?.debug(
-        `Creating new session for ${destination} via setConnectionConfig: mcpUrl(${serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars${formatToken(config.authorizationToken) ? `, ${formatToken(config.authorizationToken)}` : ''})`,
-      );
-
-      const newSession: XsuaaSessionData = {
-        mcpUrl: serviceUrl,
-        jwtToken: config.authorizationToken || '',
-      };
-      await this.saveSession(destination, newSession);
-      this.log?.info(
-        `Session created for ${destination}: mcpUrl(${serviceUrl.substring(0, 40)}...), token(${config.authorizationToken?.length || 0} chars${formatToken(config.authorizationToken) ? `, ${formatToken(config.authorizationToken)}` : ''})`,
-      );
-      return;
-    }
-
-    // Update connection fields
-    this.log?.debug(
-      `Updating connection config for existing session ${destination}: serviceUrl(${config.serviceUrl ? `${config.serviceUrl.substring(0, 40)}...` : 'unchanged'}), token(${config.authorizationToken?.length || 0} chars${formatToken(config.authorizationToken) ? `, ${formatToken(config.authorizationToken)}` : ''})`,
-    );
-    const updated: XsuaaSessionData = {
-      ...current,
-      mcpUrl:
-        config.serviceUrl !== undefined ? config.serviceUrl : current.mcpUrl,
-      jwtToken:
-        config.authorizationToken !== undefined
-          ? config.authorizationToken
-          : current.jwtToken,
-    };
-
-    await this.saveSession(destination, updated);
-    this.log?.info(
-      `Connection config updated for ${destination}: serviceUrl(${updated.mcpUrl ? `${updated.mcpUrl.substring(0, 40)}...` : 'none'}), token(${config.authorizationToken?.length || 0} chars${formatToken(config.authorizationToken) ? `, ${formatToken(config.authorizationToken)}` : ''})`,
-    );
-  }
-
-  async getAuthorizationConfig(
-    destination: string,
-  ): Promise<IAuthorizationConfig | null> {
-    const sessionConfig = await this.loadRawSession(destination);
-    if (!sessionConfig) {
-      this.log?.debug(`Authorization config not found for ${destination}`);
-      return null;
-    }
-
-    if (
-      !sessionConfig.uaaUrl ||
-      !sessionConfig.uaaClientId ||
-      !sessionConfig.uaaClientSecret
-    ) {
-      this.log?.warn(
-        `Authorization config for ${destination} missing required UAA fields`,
-      );
-      return null;
-    }
-
-    this.log?.debug(
-      `Authorization config loaded for ${destination}: uaaUrl(${sessionConfig.uaaUrl.substring(0, 30)}...), hasRefreshToken(${!!sessionConfig.refreshToken})`,
-    );
-    return {
-      uaaUrl: sessionConfig.uaaUrl,
-      uaaClientId: sessionConfig.uaaClientId,
-      uaaClientSecret: sessionConfig.uaaClientSecret,
-      refreshToken: sessionConfig.refreshToken,
-    };
-  }
-
-  async setAuthorizationConfig(
-    destination: string,
-    config: IAuthorizationConfig,
-  ): Promise<void> {
-    const current = await this.loadRawSession(destination);
-
-    if (!current) {
-      // Session doesn't exist - create new one
-      // For XSUAA, use defaultServiceUrl (required - cannot be obtained from service key)
-      this.log?.debug(
-        `Creating new session for ${destination} via setAuthorizationConfig: mcpUrl(${this.defaultServiceUrl.substring(0, 40)}...)`,
-      );
-
-      const newSession: XsuaaSessionData = {
-        mcpUrl: this.defaultServiceUrl,
-        jwtToken: '', // Will be set when connection config is set
-        uaaUrl: config.uaaUrl,
-        uaaClientId: config.uaaClientId,
-        uaaClientSecret: config.uaaClientSecret,
-        refreshToken: config.refreshToken,
-      };
-      await this.saveSession(destination, newSession);
-      this.log?.info(
-        `New session created for ${destination} via setAuthorizationConfig: uaaUrl(${config.uaaUrl.substring(0, 30)}...), hasRefreshToken(${!!config.refreshToken})`,
-      );
-      return;
-    }
-
-    // Update authorization fields
-    this.log?.debug(
-      `Updating authorization config for existing session ${destination}: uaaUrl(${config.uaaUrl.substring(0, 30)}...), hasRefreshToken(${!!config.refreshToken})`,
-    );
-    const updated: XsuaaSessionData = {
-      ...current,
-      uaaUrl: config.uaaUrl,
-      uaaClientId: config.uaaClientId,
-      uaaClientSecret: config.uaaClientSecret,
-      refreshToken: config.refreshToken || current.refreshToken,
-    };
-    await this.saveSession(destination, updated);
-    this.log?.info(
-      `Authorization config updated for ${destination}: uaaUrl(${config.uaaUrl.substring(0, 30)}...), hasRefreshToken(${!!config.refreshToken})`,
-    );
-  }
-}
-
-/**
- * Type guard for XsuaaSessionConfig
- */
-function isXsuaaSessionConfig(config: unknown): config is XsuaaSessionData {
-  if (!config || typeof config !== 'object') return false;
-  const obj = config as Record<string, unknown>;
-  return 'jwtToken' in obj && !('sapUrl' in obj) && !('abapUrl' in obj);
 }

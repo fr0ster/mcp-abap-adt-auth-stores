@@ -1,11 +1,14 @@
 /**
- * Integration tests for XsuaaSessionStore
- * Tests with real .env files from test-config.yaml
+ * Integration tests for XsuaaSessionStore — with the real sessions directory named in
+ * tests/test-config.yaml. Without that file (the template's placeholders), each
+ * case returns at once, saying so.
+ *
+ * The write case writes a destination of its own and removes it: it never
+ * touches the configured destination's real session.
  */
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import type { IConfig } from '@mcp-abap-adt/interfaces-auth-sap';
 import { XsuaaSessionStore } from '../../../stores/xsuaa/XsuaaSessionStore';
 import {
   getSessionsDir,
@@ -27,129 +30,57 @@ describe('XsuaaSessionStore Integration', () => {
   };
 
   const config = loadTestConfig();
-  const xsuaaDestinations = getXsuaaDestinations(config);
+  const destination = getXsuaaDestinations(config).btp_destination;
   const sessionsDir = getSessionsDir(config);
-  const hasRealXsuaaConfig = hasRealConfig(config, 'xsuaa');
+  const hasReal = hasRealConfig(config, 'xsuaa');
 
-  describe('Real file operations', () => {
-    it('should load XSUAA session from real .env file', async () => {
-      if (!hasRealXsuaaConfig) {
-        console.warn('⚠️  Skipping XSUAA session load test - no real config');
-        return;
+  it('loads the configured session from its real .env file: the secret alone', async () => {
+    if (!hasReal || !destination || !sessionsDir) {
+      console.warn('⚠️  Skipping XSUAA session load test - no real config');
+      return;
+    }
+    const store = new XsuaaSessionStore(sessionsDir);
+    const session = await store.loadSession(destination);
+    if (session) {
+      for (const key of Object.keys(session)) {
+        expect([
+          'authorizationToken',
+          'sessionCookies',
+          'expiresAt',
+          'refreshToken',
+        ]).toContain(key);
       }
+    }
+    expect(await store.getAuthorizationConfig(destination)).toBeNull();
+  }, 10000);
 
-      if (!xsuaaDestinations.btp_destination || !sessionsDir) {
-        console.warn(
-          '⚠️  Skipping XSUAA session load test - missing required config',
-        );
-        return;
-      }
-
-      const store = new XsuaaSessionStore(
-        sessionsDir,
-        xsuaaDestinations.mcp_url || 'https://default.mcp.com',
+  it('saves, loads and removes a session of its own in the real directory', async () => {
+    if (!hasReal || !sessionsDir) {
+      console.warn('⚠️  Skipping XSUAA session save/load test - no real config');
+      return;
+    }
+    if (!(await canWrite(sessionsDir))) {
+      console.warn(
+        '⚠️  Skipping XSUAA session save/load test - sessions directory not writable',
       );
-
-      const session = await store.loadSession(
-        xsuaaDestinations.btp_destination,
-      );
-
-      // Session may not exist, but store should not throw error
-      expect(session).toBeDefined();
-    }, 10000);
-
-    it('should save and load XSUAA session', async () => {
-      if (!hasRealXsuaaConfig) {
-        console.warn(
-          '⚠️  Skipping XSUAA session save/load test - no real config',
-        );
-        return;
-      }
-
-      if (!xsuaaDestinations.btp_destination || !sessionsDir) {
-        console.warn(
-          '⚠️  Skipping XSUAA session save/load test - missing required config',
-        );
-        return;
-      }
-      if (!(await canWrite(sessionsDir))) {
-        console.warn(
-          '⚠️  Skipping XSUAA session save/load test - sessions directory not writable',
-        );
-        return;
-      }
-
-      const store = new XsuaaSessionStore(
-        sessionsDir,
-        xsuaaDestinations.mcp_url || 'https://default.mcp.com',
-      );
-
-      // Create test session config
-      const testSession: IConfig = {
-        serviceUrl: xsuaaDestinations.mcp_url || 'https://test.mcp.com',
+      return;
+    }
+    const own = `auth-stores-it-${Date.now().toString(36)}`;
+    const store = new XsuaaSessionStore(sessionsDir);
+    try {
+      await store.saveSession(own, {
         authorizationToken: 'test-jwt-token',
+        expiresAt: 1_900_000_000_000,
         refreshToken: 'test-refresh-token',
-        uaaUrl: 'https://test.uaa.com',
-        uaaClientId: 'test-client-id',
-        uaaClientSecret: 'test-client-secret',
-      };
-
-      // Save session
-      await store.saveSession(xsuaaDestinations.btp_destination, testSession);
-
-      // Load session
-      const loadedSession = await store.loadSession(
-        xsuaaDestinations.btp_destination,
-      );
-
-      expect(loadedSession).toBeDefined();
-      expect(loadedSession).not.toBeNull();
-
-      if (loadedSession) {
-        expect(loadedSession.serviceUrl).toBe(testSession.serviceUrl);
-        expect(loadedSession.authorizationToken).toBe(
-          testSession.authorizationToken,
-        );
-        expect(loadedSession.refreshToken).toBe(testSession.refreshToken);
-        expect(loadedSession.uaaUrl).toBe(testSession.uaaUrl);
-        expect(loadedSession.uaaClientId).toBe(testSession.uaaClientId);
-        expect(loadedSession.uaaClientSecret).toBe(testSession.uaaClientSecret);
-      }
-
-      // Clean up - delete test session
-      await store.deleteSession(xsuaaDestinations.btp_destination);
-    }, 10000);
-
-    it('should get authorization config from real session', async () => {
-      if (!hasRealXsuaaConfig) {
-        console.warn(
-          '⚠️  Skipping XSUAA authorization config test - no real config',
-        );
-        return;
-      }
-
-      if (!xsuaaDestinations.btp_destination || !sessionsDir) {
-        console.warn(
-          '⚠️  Skipping XSUAA authorization config test - missing required config',
-        );
-        return;
-      }
-
-      const store = new XsuaaSessionStore(
-        sessionsDir,
-        xsuaaDestinations.mcp_url || 'https://default.mcp.com',
-      );
-
-      const authConfig = await store.getAuthorizationConfig(
-        xsuaaDestinations.btp_destination,
-      );
-
-      // May be null if session doesn't exist
-      if (authConfig) {
-        expect(authConfig.uaaUrl).toBeDefined();
-        expect(authConfig.uaaClientId).toBeDefined();
-        expect(authConfig.uaaClientSecret).toBeDefined();
-      }
-    }, 10000);
-  });
+      });
+      expect(await store.loadSession(own)).toEqual({
+        authorizationToken: 'test-jwt-token',
+        expiresAt: 1_900_000_000_000,
+        refreshToken: 'test-refresh-token',
+      });
+    } finally {
+      await store.deleteSession(own);
+    }
+    expect(await store.loadSession(own)).toBeNull();
+  }, 10000);
 });

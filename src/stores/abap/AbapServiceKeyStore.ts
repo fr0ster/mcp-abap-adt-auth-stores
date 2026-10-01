@@ -4,11 +4,11 @@
 
 import * as path from 'node:path';
 import type {
-  IAuthorizationConfig,
   IConfig,
   IConnectionConfig,
   IServiceKeyStore,
-} from '@mcp-abap-adt/interfaces-auth-sap';
+} from '@mcp-abap-adt/interfaces-auth-broker';
+import type { IAuthorizationConfig } from '@mcp-abap-adt/interfaces-auth-sap';
 import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
 import { ParseError } from '../../errors/StoreErrors';
 import { AbapServiceKeyParser } from '../../parsers/abap/AbapServiceKeyParser';
@@ -176,9 +176,12 @@ export class AbapServiceKeyStore implements IServiceKeyStore {
       const sapClient = key.abap?.client || key.sap_client || key.client;
       const language = key.abap?.language || key.language;
 
-      const result = {
+      // A key holds an OAuth client and nothing else: a token destination.
+      // Which grant it uses the key cannot state, so none is answered; and a
+      // token is secret — a key store answers none.
+      const result: IConnectionConfig = {
         serviceUrl,
-        authorizationToken: '', // Service key doesn't contain tokens
+        authType: 'jwt',
         sapClient,
         language,
       };

@@ -13,11 +13,16 @@ npm install @mcp-abap-adt/auth-stores
 
 ## Overview
 
-This package implements the `IServiceKeyStore` and `ISessionStore` interfaces from `@mcp-abap-adt/interfaces-auth-sap`:
+This package implements the `IServiceKeyStore` and `ISessionStore` contracts from `@mcp-abap-adt/interfaces-auth-broker`. Since 3.0.0 the two stores are split **by the role of the data**:
 
-- **Service Key Stores**: Read service key JSON files from a specified directory
-- **Session Stores**: Read/write session data from/to `.env` files or in-memory storage
-- **File Handlers**: Utility classes for working with JSON and ENV files (exported for consumers; the session stores do their own file I/O through `envLoader` / `tokenStorage`)
+| Store | Holds | Implementations here |
+|---|---|---|
+| `IServiceKeyStore` — the **means**: what is used to obtain a session secret | the client (`uaaUrl`, `uaaClientId`, `uaaClientSecret`); `authType`, `grantType`; basic's `username` / `password`; the `snc*`, `oidc*` and `saml*` settings; `serviceUrl`, `sapClient`, `language` | `AbapServiceKeyStore`, `XsuaaServiceKeyStore` (SAP service key JSON), `EnvDestinationStore` (`<dir>/<destination>.env`) |
+| `ISessionStore` — the **secret** that authorizes within a session | `authorizationToken` or `sessionCookies`, their `expiresAt`, `refreshToken` | `AbapSessionStore`, `XsuaaSessionStore`, `EnvFileSessionStore` (files), `SafeAbapSessionStore`, `SafeXsuaaSessionStore` (memory) |
+
+A key store never answers a secret, and a session store refuses to hold means. `basic` and `snc` destinations obtain no session secret: their session holds nothing.
+
+- **File Handlers**: utility classes for JSON and ENV files (exported for consumers; the stores do their own file I/O)
 
 ## Responsibilities and Design Principles
 
@@ -41,7 +46,7 @@ This principle ensures:
 
 This package is responsible for:
 
-1. **Implementing storage interfaces**: Provides concrete implementations of `IServiceKeyStore` and `ISessionStore` interfaces defined in `@mcp-abap-adt/interfaces-auth-sap`
+1. **Implementing storage interfaces**: Provides concrete implementations of `IServiceKeyStore` (the means) and `ISessionStore` (the session secret) defined in `@mcp-abap-adt/interfaces-auth-broker`
 2. **File I/O operations**: Handles reading and writing service key JSON files and session `.env` files
 3. **Data format conversion**: Converts between interface types (`IConfig`, `IConnectionConfig`, `IAuthorizationConfig`) and internal storage formats
 4. **Platform-specific handling**: Provides different store implementations for ABAP, BTP, and XSUAA with their specific data formats
@@ -50,8 +55,8 @@ This package is responsible for:
 
 - **Implements interfaces**: Provides concrete implementations of `IServiceKeyStore` and `ISessionStore`
 - **Handles file operations**: Reads/writes JSON and `.env` files using atomic operations
-- **Manages data formats**: Converts between interface types and internal storage formats (e.g., `AbapSessionData`, `BtpBaseSessionData`)
-- **Provides utilities**: File handlers (`JsonFileHandler`, `EnvFileHandler`) for safe file operations. The session stores do not use `EnvFileHandler`: `AbapSessionStore` and `XsuaaSessionStore` read and write through their own loaders and token storage (`envLoader`/`tokenStorage`), `EnvFileSessionStore` parses its own file
+- **Manages data formats**: Converts between interface types and `.env` / JSON key names
+- **Provides utilities**: File handlers (`JsonFileHandler`, `EnvFileHandler`) for safe file operations. The `.env` stores do not use `EnvFileHandler`: they read with dotenv and rewrite only their own keys of a file, keeping every other line
 
 #### What This Package Does NOT Do
 
@@ -64,7 +69,8 @@ This package is responsible for:
 
 This package interacts with external packages **ONLY through interfaces**:
 
-- **`@mcp-abap-adt/interfaces-auth-sap`** (`^1.1.0`): `IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `IAuthorizationConfig` — what a store is, for an SAP or BTP system. 1.1.0 adds `authType: 'snc'` and the `snc*` fields
+- **`@mcp-abap-adt/interfaces-auth-broker`** (`^1.0.0`): `IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `DestinationGrant` — the broker's port: the destination and the stores that hold it. 1.0.0 carries `grantType`, `expiresAt` and the `oidc*` / `saml*` fields
+- **`@mcp-abap-adt/interfaces-auth-sap`** (`^2.0.0`): `IAuthorizationConfig` — the UAA client
 - **`@mcp-abap-adt/interfaces-auth`** (`^3.0.0`): `STORE_ERROR_CODES` and `StoreErrorCode` — the failure vocabulary, which means the same off SAP
 - **`@mcp-abap-adt/interfaces-utils`** (`^1.1.0`): `ILogger`
 - **`dotenv`** (`^18.0.4`): parses `.env` files
@@ -73,232 +79,236 @@ This package interacts with external packages **ONLY through interfaces**:
 
 ## Store Types
 
-### Service Key Stores
+### Key stores — the means
 
-Service key stores read JSON files containing UAA credentials and connection information:
+- **`AbapServiceKeyStore`** — reads ABAP service keys (`{destination}.json`, nested `uaa` object)
+- **`XsuaaServiceKeyStore`** (alias **`BtpServiceKeyStore`**) — reads XSUAA service keys (direct format, or `cf service-key` output with a `credentials` wrapper)
+- **`EnvDestinationStore`** — a destination's means in `<directory>/<destination>.env`, with a write method of its own; optionally falls back to another key store field by field
 
-- **`BtpServiceKeyStore`** - Reads XSUAA service keys for base BTP (direct XSUAA format)
-- **`AbapServiceKeyStore`** - Reads ABAP service keys (with nested `uaa` object)
-- **`XsuaaServiceKeyStore`** - Reads XSUAA service keys (alias for BtpServiceKeyStore)
+A SAP service key holds an OAuth client and nothing else, so both service key stores answer `authType: 'jwt'` from `getConnectionConfig`. They answer **no `grantType`**: a service key cannot state which grant a destination uses (the grants a client may use are declared on the XSUAA instance, and a client permitted several serves all of them). State the grant in an `EnvDestinationStore` — on its own, or with the service key store as its fallback. They answer **no token** either (2.x answered `authorizationToken: ''`).
 
-### Session Stores
+### Session stores — the secret
 
-Session stores manage authentication tokens and configuration:
+**File-based** (`.env` files):
+- **`AbapSessionStore`** (alias **`SamlSessionStore`**) — `SAP_JWT_TOKEN` or `SAP_SESSION_COOKIES_B64`, `SAP_EXPIRES_AT`, `SAP_REFRESH_TOKEN`
+- **`XsuaaSessionStore`** (alias **`BtpSessionStore`**) — `XSUAA_JWT_TOKEN`, `XSUAA_EXPIRES_AT`, `XSUAA_REFRESH_TOKEN`
+- **`EnvFileSessionStore`** — the `SAP_*` secret keys of one given file (`--env /path/to/.env`), whatever the destination
 
-**File-based stores** (persist to `.env` files):
-- **`BtpSessionStore`** - Stores base BTP sessions using `XSUAA_*` environment variables
-- **`AbapSessionStore`** - Stores ABAP sessions using `SAP_*` environment variables: basic, JWT, SAML cookies or SNC, with the type kept explicitly in `SAP_AUTH_TYPE`
-- **`XsuaaSessionStore`** - Stores XSUAA sessions using `XSUAA_*` environment variables
+**In-memory** (non-persistent):
+- **`SafeAbapSessionStore`** (alias **`SafeSamlSessionStore`**)
+- **`SafeXsuaaSessionStore`** (alias **`SafeBtpSessionStore`**)
 
-**In-memory stores** (non-persistent, secure):
-- **`SafeBtpSessionStore`** - In-memory store for base BTP sessions
-- **`SafeAbapSessionStore`** - In-memory store for ABAP sessions
-- **`SafeXsuaaSessionStore`** - In-memory store for XSUAA sessions
+Every session store follows the same rules:
 
-**File-based single-file stores**:
-- **`EnvFileSessionStore`** - A specific `.env` file path (e.g., `--env /path/to/.env`); basic and JWT only (no SAML, no SNC)
+- **The secret alone.** `saveSession` and `setConnectionConfig` take `authorizationToken`, `sessionCookies`, `expiresAt` (epoch ms) and `refreshToken`. A write carrying **any other field** — `serviceUrl`, `authType`, `grantType`, `username`, `password`, the `snc*`, `oidc*` and `saml*` fields, `sapClient`, `language`, `uaaUrl` / `uaaClientId` / `uaaClientSecret`, or a field no store knows — is refused with a `RefusedFieldsError` (code `INVALID_CONFIG`) whose message and `fields` name the fields, never a value. A field given as `undefined` is not carried.
+- **No serviceUrl.** A session needs none, and none is answered.
+- **No client.** `setAuthorizationConfig` always refuses (`IAuthorizationConfig` is the client, which is means); `getAuthorizationConfig` answers `null`. A refresh token is written through `saveSession`, and answered by `loadSession`.
+- **One secret kind at a time.** Writing a token clears stored cookies, and writing cookies clears the token. `expiresAt` is written and cleared with its credential: a new credential written without `expiresAt` does not keep the old one's. A credential given as `''` clears it, with its `expiresAt`; clearing the kind not held (`authorizationToken: ''` while cookies are stored) changes nothing. `expiresAt` must be a non-negative whole number of epoch milliseconds — what the file stores read back — anything else is refused. The refresh token is kept until a write gives another (`''` clears it).
+- **The XSUAA stores hold a token.** They refuse cookies, and a write that would leave the session without a token.
+- **What is answered.** `loadSession`: the four secret fields present, or `null` when there are none. `getConnectionConfig`: the token or cookies and `expiresAt`, or `null`.
+- **A file store touches only its own keys.** A write sets or removes the secret keys and leaves every other line of the file — keys, comments, blank lines — byte for byte. `deleteSession` removes the secret keys, and the file only when no key is left.
+- Constructors: `AbapSessionStore(directory, log?)`, `XsuaaSessionStore(directory, log?)`, `EnvFileSessionStore(envFilePath, log?)`, `SafeAbapSessionStore(log?)`, `SafeXsuaaSessionStore(log?)`. File stores create their directory if it is missing. A string where the logger goes — 2.x's `defaultServiceUrl`, passed by a JavaScript caller — throws a `TypeError` at construction saying so.
 
 ## Usage
 
-### BTP Stores (base BTP without sapUrl)
+### Composing the two stores
 
-```typescript
-import { BtpServiceKeyStore, BtpSessionStore, SafeBtpSessionStore } from '@mcp-abap-adt/auth-stores';
-
-// Service key store - reads {destination}.json files from directory
-const serviceKeyStore = new BtpServiceKeyStore('/path/to/service-keys');
-
-// File-based session store - reads/writes {destination}.env files
-// defaultServiceUrl is REQUIRED (cannot be obtained from service key)
-const sessionStore = new BtpSessionStore('/path/to/sessions', 'https://default.mcp.com', logger);
-
-// In-memory session store (non-persistent)
-// defaultServiceUrl is REQUIRED (cannot be obtained from service key)
-const safeSessionStore = new SafeBtpSessionStore('https://default.mcp.com', logger);
-```
-
-### ABAP Stores (with sapUrl)
+The consumer — the broker's caller — decides where means and secrets live; no store picks a directory by itself.
 
 ```typescript
 import {
   AbapServiceKeyStore,
   AbapSessionStore,
-  SafeAbapSessionStore,
-  SamlSessionStore,
-  SafeSamlSessionStore,
+  EnvDestinationStore,
 } from '@mcp-abap-adt/auth-stores';
 
-// Service key store - reads ABAP service keys with nested uaa object
-const serviceKeyStore = new AbapServiceKeyStore('/path/to/service-keys');
+// One directory: means and secret in the same <destination>.env.
+// Each store touches only its own keys, so neither loses the other's.
+const sessions = '/home/me/.config/mcp-abap-adt/sessions';
+const keyStore = new EnvDestinationStore(sessions, {
+  // a SAP service key supplies the client and URL; the .env file the grant
+  fallback: new AbapServiceKeyStore('/home/me/.config/mcp-abap-adt/service-keys'),
+});
+const sessionStore = new AbapSessionStore(sessions);
 
-// File-based session store - stores ABAP sessions with SAP_* env vars
-const sessionStore = new AbapSessionStore('/path/to/sessions');
+// Or two directories: the secret apart from the means.
+const meansStore = new EnvDestinationStore('/etc/mcp-abap-adt/destinations');
+const secretStore = new AbapSessionStore('/var/lib/mcp-abap-adt/sessions');
+```
 
-// In-memory session store
-const safeSessionStore = new SafeAbapSessionStore();
+Writing means is `EnvDestinationStore`'s own method — `IServiceKeyStore` is read-only. A given field is set, `null` removes it, a field not given stays:
 
-// A session holds one credential: basic, jwt, saml or snc, through the contract
-await sessionStore.setConnectionConfig('DEV', {
+```typescript
+await keyStore.setDestination('TRIAL', {
+  authType: 'jwt',
+  grantType: 'authorization_code',
+});
+
+await keyStore.setDestination('DEV', {
   serviceUrl: 'https://dev.example.com',
   authType: 'basic',
   username: 'DEVELOPER',
   password: '...',
+  sapClient: '100',
 });
-await sessionStore.setConnectionConfig('DEV_SNC', {
+
+await keyStore.setDestination('DEV_SNC', {
   serviceUrl: 'https://dev.example.com',
   authType: 'snc',
   sncPartnerName: 'p:CN=DEV, O=ORG, C=DE',
 });
 
-// SAML aliases (same behavior as ABAP stores)
-const samlSessionStore = new SamlSessionStore('/path/to/sessions');
-const safeSamlSessionStore = new SafeSamlSessionStore();
+// A public OIDC client: the secret is stated as ''
+await keyStore.setDestination('IDP', {
+  serviceUrl: 'https://h.abap.example',
+  authType: 'jwt',
+  grantType: 'device_code',
+  uaaUrl: 'https://idp.example/realms/r',
+  uaaClientId: 'public-client',
+  uaaClientSecret: '',
+  oidcIssuerUrl: 'https://idp.example/realms/r',
+  oidcScopes: ['openid', 'offline_access'],
+});
+
+// The secret, after a login, goes to the session store
+await sessionStore.saveSession('TRIAL', {
+  authorizationToken: '<jwt>',
+  expiresAt: Date.now() + 3_600_000,
+  refreshToken: '<refresh token>',
+});
 ```
 
-### XSUAA Stores
+### EnvDestinationStore
 
-```typescript
-import { XsuaaServiceKeyStore, XsuaaSessionStore, SafeXsuaaSessionStore } from '@mcp-abap-adt/auth-stores';
+`new EnvDestinationStore(directory, { fallback?, variables?, log? })` — `directory` has no default; a destination is `<directory>/<destination>.env`.
 
-// Service key store - reads XSUAA service keys
-const serviceKeyStore = new XsuaaServiceKeyStore('/path/to/service-keys');
+`EnvDestinationStore.forFile(path, { fallback?, variables?, log? })` — one given file, whatever its name (`.env.dev`, `conn.cfg`): every destination name resolves to that file and is not used to find it, as with `EnvFileSessionStore`. The fallback is still asked by the destination name.
 
-// File-based session store - stores XSUAA sessions
-// defaultServiceUrl is REQUIRED (cannot be obtained from service key)
-const sessionStore = new XsuaaSessionStore('/path/to/sessions', 'https://default.mcp.com', logger);
+- **Reads** every means field of `IConnectionConfig` (`getConnectionConfig`) and the client (`getAuthorizationConfig`: answered when `uaaUrl`, `uaaClientId` and `uaaClientSecret` are all stated; `''` is stated). `getServiceKey` answers both together.
+- **Answers means only**: no token, cookies, expiry or refresh token, from the file or the fallback.
+- **Infers nothing**: a file without `SAP_AUTH_TYPE` states no type; a type or grant it does not know is answered as stored, for the consumer to name. With a fallback, the missing type comes from the fallback: a 1.x/2.x `basic` file without `SAP_AUTH_TYPE` beside a SAP service key reads as `authType: 'jwt'` (the key's) **with** the file's `username` / `password` — state `SAP_AUTH_TYPE=basic` in such a file, or `SAP_AUTH_TYPE=jwt` and `SAP_GRANT_TYPE` for a token destination.
+- **Fallback**: another `IServiceKeyStore` fills, field by field, what the file leaves out. A field the file states — `''` included — wins.
+- **Writes** (`setDestination`, `deleteDestination`): only its means keys. A secret field, or any field that is not means, is refused with a `RefusedFieldsError`; a malformed value (an unknown `authType` or `grantType`, a scope with whitespace, a non-boolean `samlIdpInitiated`) with an `InvalidConfigError` naming the field.
+- **Destination names** are file names: one containing `/`, `\` or `..` is refused (`InvalidConfigError`) by every store that builds a path from it — `EnvDestinationStore`, `AbapSessionStore`, `XsuaaSessionStore` — for reads and writes. `''` is the file named `.env`. (`forFile` and `EnvFileSessionStore` do not use the name.)
+- **Key names**: `variables: ABAP_DESTINATION_VARS` (the default) or `XSUAA_DESTINATION_VARS`.
 
-// In-memory session store
-// defaultServiceUrl is REQUIRED (cannot be obtained from service key)
-const safeSessionStore = new SafeXsuaaSessionStore('https://default.mcp.com', logger);
-```
+### Env file format
 
-### EnvFileSessionStore (Single File)
-
-`EnvFileSessionStore` reads connection configuration from a specific `.env` file path rather than a directory. This is useful for the `--env` CLI option.
-
-```typescript
-import { EnvFileSessionStore } from '@mcp-abap-adt/auth-stores';
-
-// Create store pointing to specific .env file
-const store = new EnvFileSessionStore('/path/to/.env', logger);
-
-// Check the auth type from the file
-const authType = store.getAuthType(); // 'basic' | 'jwt' | null
-
-// Load session (works like other session stores)
-const config = await store.loadSession('default');
-console.log(config?.serviceUrl, config?.authType);
-
-// For basic auth
-console.log(config?.username, config?.password);
-
-// For JWT auth
-console.log(config?.authorizationToken, config?.refreshToken);
-```
-
-**Env file format:**
-```bash
-# Connection
-SAP_URL=https://your-sap-system.com
-SAP_CLIENT=100
-
-# Auth type: 'basic' or 'jwt' (defaults to 'basic'; a SAP_JWT_TOKEN implies 'jwt')
-SAP_AUTH_TYPE=basic
-
-# Basic auth credentials
-SAP_USERNAME=your-username
-SAP_PASSWORD=your-password
-
-# OR JWT auth
-# SAP_AUTH_TYPE=jwt
-# SAP_JWT_TOKEN=your-jwt-token
-# SAP_REFRESH_TOKEN=your-refresh-token
-# SAP_UAA_URL=https://uaa.example.com
-# SAP_UAA_CLIENT_ID=client-id
-# SAP_UAA_CLIENT_SECRET=client-secret
-```
-
-**Important**: `EnvFileSessionStore` supports basic and JWT only — SAML and SNC sessions are for `AbapSessionStore` / `SafeAbapSessionStore`. It is not read-only: it writes `SAP_JWT_TOKEN` and `SAP_REFRESH_TOKEN` back to its file when the token is refreshed or set (`save()`).
-
-### AbapSessionStore env format
-
-`AbapSessionStore` keeps one `{destination}.env` per destination in its directory. The authentication type is written explicitly:
+One `<destination>.env` may hold both roles. The **means** keys (read and written by `EnvDestinationStore`, `ABAP_DESTINATION_VARS`):
 
 ```bash
 SAP_URL=https://your-sap-system.com
+SAP_AUTH_TYPE=jwt                     # basic | jwt | saml | snc
+SAP_GRANT_TYPE=authorization_code     # authorization_code | client_credentials | passcode |
+                                      # oidc_authorization_code | device_code | password |
+                                      # token_exchange | saml2_pure | saml2_bearer | none
 SAP_CLIENT=100
 SAP_LANGUAGE=EN
 
-# basic | jwt | saml | snc — written on every save that carries a credential
-SAP_AUTH_TYPE=snc
+# basic
+SAP_USERNAME=DEVELOPER
+SAP_PASSWORD='...'
 
-# snc: a partner name, no token or password
-SAP_SNC_PARTNERNAME=p:CN=SID, O=ORG, C=DE
+# snc
+SAP_SNC_PARTNERNAME='p:CN=SID, O=ORG, C=DE'
 SAP_SNC_QOP=9
 SAP_SNC_LIB=/usr/sap/sapcrypto/libsapcrypto.so
-SAP_SNC_MYNAME=p:CN=ME, O=ORG, C=DE
+SAP_SNC_MYNAME=p:CN=ME
 
-# basic: SAP_USERNAME / SAP_PASSWORD
-# jwt:   SAP_JWT_TOKEN / SAP_REFRESH_TOKEN / SAP_UAA_URL / SAP_UAA_CLIENT_ID / SAP_UAA_CLIENT_SECRET
-# saml:  SAP_SESSION_COOKIES_B64 (base64-encoded cookie string)
+# the client (an empty secret is a public client)
+SAP_UAA_URL=https://uaa.example.com
+SAP_UAA_CLIENT_ID=client-id
+SAP_UAA_CLIENT_SECRET=client-secret
+
+# OIDC
+SAP_OIDC_ISSUER_URL=https://idp.example/realms/r
+SAP_OIDC_AUTHORIZATION_ENDPOINT=...
+SAP_OIDC_TOKEN_ENDPOINT=...
+SAP_OIDC_DEVICE_AUTHORIZATION_ENDPOINT=...
+SAP_OIDC_SCOPES='openid offline_access'   # space-separated
+SAP_OIDC_SUBJECT_TOKEN=...                # token_exchange
+SAP_OIDC_SUBJECT_TOKEN_TYPE=...
+SAP_OIDC_AUDIENCE=...
+SAP_OIDC_ACTOR_TOKEN=...
+SAP_OIDC_ACTOR_TOKEN_TYPE=...
+
+# SAML
+SAP_SAML_IDP_SSO_URL=https://idp.example/sso
+SAP_SAML_IDP_ENTITY_ID=https://idp.example
+SAP_SAML_IDP_CERTIFICATES_B64=<base64 of cert 1>,<base64 of cert 2>   # each certificate's text, base64
+SAP_SAML_SP_ENTITY_ID=https://h.abap.example
+SAP_SAML_ACS_URL=https://h.abap.example/sap/saml2/sp/acs
+SAP_SAML_RELAY_STATE=...
+SAP_SAML_IDP_INITIATED=true               # true | false
+SAP_SAML_CLOCK_SKEW_MS=30000
+SAP_SAML_TOKEN_URL=https://uaa.example/oauth/token/alias/...   # saml2_bearer
 ```
 
-- `SAP_AUTH_TYPE` wins when present. A file without it (written before 2.0.0) is inferred as before: cookies mean `saml`; a username and password with an empty token mean `basic`; a token means `jwt`. An unknown value is ignored and the type inferred.
-- **SNC is never inferred.** It is new in 2.0.0, so no older file needs it: a session is `snc` only when `authType: 'snc'` is declared (`SAP_AUTH_TYPE=snc`). `sncPartnerName` without it is not a credential, and the `SAP_SNC_*` keys of a file without `SAP_AUTH_TYPE=snc` are not read.
-- **A save writes `SAP_AUTH_TYPE` when it carries a credential**: the declared `authType`, or, without one, the type the credential implies — cookies are `saml`, a token is `jwt`, a username and password are `basic`. A save or update that carries more than one of these and no `authType` is refused with an error: a session holds one credential, and the store does not guess which one was meant. A save that carries neither a type nor a credential (a refresh token alone, a client) leaves the credential keys, the `SAP_SNC_*` keys and `SAP_AUTH_TYPE` as they are.
-- Writing a session in one mode clears the credentials of the others: their keys are removed (`SAP_JWT_TOKEN` is left empty, as 1.x wrote it), including the SNC keys when it is not `snc`.
-- `SAP_SNC_PARTNERNAME` is required for an `snc` session; the other three are optional.
+The **secret** keys (read and written by `AbapSessionStore` and `EnvFileSessionStore`, `ABAP_SESSION_VARS`):
 
-**Updating a session with `setConnectionConfig`** — both ABAP session stores (`AbapSessionStore`, `SafeAbapSessionStore`) apply the same rules:
+```bash
+SAP_JWT_TOKEN=<access token>              # or:
+SAP_SESSION_COOKIES_B64=<base64 of the Cookie header value>
+SAP_EXPIRES_AT=1790000000000              # epoch ms
+SAP_REFRESH_TOKEN=<refresh token>
+```
 
-- A call of the session's current type — declared, or carrying only fields of that type — updates field by field: `{ password: 'new' }` on a basic session keeps the username; `{ sncQop: '3' }` on an snc session keeps the partner name. A field given as `undefined` keeps its value; an empty string clears it.
-- A call of another type replaces the credential, and the fields of the other types are dropped.
-- A call with no credential (`{ language: 'DE' }`, a client, a URL) leaves the credential as it was.
+`XSUAA_DESTINATION_VARS` and `XSUAA_SESSION_VARS` are the same with `XSUAA_`, the URL under `XSUAA_MCP_URL`. Values with spaces or special characters are written in the first quote character they do not contain — `'`, then `` ` ``, then `"` — so dotenv reads them back unchanged. Two values cannot be written, and are refused with a `StorageError` naming the key: one with a line break (certificates are base64-encoded for that reason), and one containing `'`, `` ` `` and `"` together (no dotenv quoting reads it back).
 
-**The snc session shape** — what `getConnectionConfig` returns, and what `loadSession` includes:
+**One key per line.** The stores write one `KEY=value` per line. In a hand-written file they find a key where dotenv does — `KEY=value`, `export KEY=value`, `KEY: value`, a quoted value spanning lines, a duplicate (the last wins in dotenv; a write keeps one) — and change nothing else, CRLF line ends included. Every rewrite is read back with dotenv before it replaces the file; if any key would not read as intended, the write is refused with a `StorageError` naming the file and the key, and the file is left alone.
+
+### 2.x session files
+
+A file written by auth-stores 2.x (or auth-broker 3.x) holds means and secret together. 3.0.0 reads it where it is, split by key — nothing is moved:
+
+| 2.x key (ABAP; the XSUAA stores' `XSUAA_*` keys alike) | Role in 3.0.0 | Read by |
+|---|---|---|
+| `SAP_JWT_TOKEN`, `SAP_SESSION_COOKIES_B64`, `SAP_REFRESH_TOKEN` (and the new `SAP_EXPIRES_AT`) | secret | the session store |
+| `SAP_URL`, `SAP_AUTH_TYPE`, `SAP_USERNAME`, `SAP_PASSWORD`, `SAP_SNC_*`, `SAP_UAA_URL`, `SAP_UAA_CLIENT_ID`, `SAP_UAA_CLIENT_SECRET`, `SAP_CLIENT`, `SAP_LANGUAGE` | means | `EnvDestinationStore`, pointed at the same directory |
+
+A session write rewrites only the secret keys, so a 2.x file stays a complete 2.x file. A 2.x `basic` or `snc` file is a complete destination as it is. A 2.x `jwt` or `saml` file states no grant — 2.x never wrote one — so add `SAP_GRANT_TYPE` (by hand, or through `setDestination`). A 3.x public-client file (`mcp-sso` stripped its `__public__` secret line) has no `SAP_UAA_CLIENT_SECRET`, so no client is answered for it: add the empty line `SAP_UAA_CLIENT_SECRET=`, or run the 4.0 CLI command again. A file without `SAP_AUTH_TYPE` read with a service key fallback takes the key's `jwt` — see *Infers nothing* above.
+
+### BTP / XSUAA stores
 
 ```typescript
-{
-  serviceUrl: 'https://your-sap-system.com',
-  authType: 'snc',
-  sncPartnerName: 'p:CN=SID, O=ORG, C=DE',
-  sncQop: '9',            // only when stored
-  sncLib: '/usr/sap/...', // only when stored
-  sncMyName: 'p:CN=ME',   // only when stored
-  sapClient: '100',
-  language: 'EN',
-}
+import {
+  XsuaaServiceKeyStore,
+  XsuaaSessionStore,
+  SafeXsuaaSessionStore,
+  EnvDestinationStore,
+  XSUAA_DESTINATION_VARS,
+} from '@mcp-abap-adt/auth-stores';
+
+const serviceKeyStore = new XsuaaServiceKeyStore('/path/to/service-keys');
+// the MCP URL and the grant are means: state them in a destination store
+const keyStore = new EnvDestinationStore('/path/to/sessions', {
+  variables: XSUAA_DESTINATION_VARS,
+  fallback: serviceKeyStore,
+});
+const sessionStore = new XsuaaSessionStore('/path/to/sessions', logger);
+const safeSessionStore = new SafeXsuaaSessionStore(logger);
 ```
 
-`SafeAbapSessionStore` holds the same shapes in memory, one credential per session, and chooses the type by the same rules. `saveSession` accepts a session without a token when it is basic (username and password), SAML (`sessionCookies`) or SNC (`authType: 'snc'` with `sncPartnerName`); a session with no credential at all is refused.
+### EnvFileSessionStore (single file)
+
+`EnvFileSessionStore` holds the secret in one given file — the `--env /path/to/.env.dev` case — and `EnvDestinationStore.forFile` reads and writes the means in the same file. Neither uses the destination name to find the file: any name resolves to it.
+
+```typescript
+import { EnvDestinationStore, EnvFileSessionStore } from '@mcp-abap-adt/auth-stores';
+
+const envPath = '/path/to/.env.dev';
+const sessionStore = new EnvFileSessionStore(envPath, logger);
+const keyStore = EnvDestinationStore.forFile(envPath, { log: logger });
+
+const means = await keyStore.getConnectionConfig('default');
+const secret = await sessionStore.loadSession('default'); // the file's secret keys
+```
+
+Besides the contract it offers `getToken`, `setToken`, `getRefreshToken`, `setRefreshToken`. 2.x's `getAuthType()` (the type is means), `save()` and `clear()` (the in-memory layer is gone: writes reach the file at once) were removed.
 
 ### Directory Configuration
 
-All stores accept a single directory path in the constructor:
-
-```typescript
-// Single directory path
-const store = new BtpServiceKeyStore('/path/to/service-keys');
-
-// File-based session stores automatically create directory in constructor if it doesn't exist
-const sessionStore = new AbapSessionStore('/path/to/sessions'); // Directory created automatically
-```
-
-**Note**: File-based session stores (`AbapSessionStore`, `BtpSessionStore`, `XsuaaSessionStore`) automatically create the directory in the constructor if it doesn't exist. Stores are ready to use immediately after construction.
-
-### Default Service URL Configuration
-
-**For XSUAA and BTP stores**: `defaultServiceUrl` is **required** in the constructor because `serviceUrl` cannot be obtained from service keys:
-- `XsuaaSessionStore(directory, defaultServiceUrl, log?)` - `defaultServiceUrl` is required
-- `SafeXsuaaSessionStore(defaultServiceUrl, log?)` - `defaultServiceUrl` is required
-- `BtpSessionStore(directory, defaultServiceUrl, log?)` - `defaultServiceUrl` is required
-- `SafeBtpSessionStore(defaultServiceUrl, log?)` - `defaultServiceUrl` is required
-
-**For ABAP stores**: `defaultServiceUrl` is **optional** because `serviceUrl` can be obtained from ABAP service keys:
-- `AbapSessionStore(directory, log?, defaultServiceUrl?)` - `defaultServiceUrl` is optional
-- `SafeAbapSessionStore(log?, defaultServiceUrl?)` - `defaultServiceUrl` is optional
-
-The `defaultServiceUrl` is used when creating new sessions via `setConnectionConfig` or `setAuthorizationConfig` if `config.serviceUrl` is not provided. It is never used to modify existing sessions.
+Every directory is a constructor parameter; a file store reads and writes only `<directory>/<destination>.env` (or `.json`) and searches nowhere else.
 
 ### Service Key Format
 
@@ -375,7 +385,8 @@ try {
 - **`FileNotFoundError`** - Service key file not found (includes `filePath`)
 - **`ParseError`** - JSON parsing failed or invalid format (includes `filePath` and `cause`)
 - **`InvalidConfigError`** - Required configuration fields missing (includes `missingFields` array)
-- **`StorageError`** - File write or permission error (includes `operation` and `cause`)
+- **`StorageError`** - File read, write or permission error (includes `operation` and `cause`); a session file that exists but cannot be read raises it — only a missing file is `null`
+- **`RefusedFieldsError`** (code `INVALID_CONFIG`) - A write carried fields the store does not hold: means given to a session store, a secret given to `EnvDestinationStore` (includes `fields`; the message names fields, never values)
 
 **Note**: Most errors result in `null` return values rather than exceptions. Only fatal errors (like JSON parsing failures) throw exceptions.
 
@@ -416,12 +427,17 @@ await EnvFileHandler.save('/path/to/file.env', {
 
 ```typescript
 import {
+  ABAP_DESTINATION_VARS, // means keys of EnvDestinationStore (SAP_*)
+  XSUAA_DESTINATION_VARS, // the same, XSUAA_*
+  ABAP_SESSION_VARS, // secret keys of AbapSessionStore / EnvFileSessionStore
+  XSUAA_SESSION_VARS, // secret keys of XsuaaSessionStore
+  // the 2.x tables, unchanged:
   ABAP_AUTHORIZATION_VARS,
   ABAP_CONNECTION_VARS,
   BTP_AUTHORIZATION_VARS,
   BTP_CONNECTION_VARS,
   XSUAA_AUTHORIZATION_VARS,
-  XSUAA_CONNECTION_VARS
+  XSUAA_CONNECTION_VARS,
 } from '@mcp-abap-adt/auth-stores';
 ```
 
@@ -501,11 +517,11 @@ Logging shows:
 - **File operations**: Which files are read/written, file sizes, file paths
 - **Parsing operations**: Structure of parsed data, validation results, keys found
 - **Storage operations**: What data is saved/loaded, token lengths, refresh token presence, URLs
-- **Token formatting**: Tokens are logged in truncated format (start...end) for security and readability
+- **Token formatting**: Tokens are logged as `<redacted, N chars>` — never a character of the token
 - **Errors**: Detailed error information with context
 
 **Logging Features**:
-- **Token Formatting**: Tokens are logged in truncated format (start...end) for security
+- **Token Formatting**: Tokens are logged as `<redacted, N chars>`
 - **Structured Logging**: Uses `DefaultLogger` from `@mcp-abap-adt/logger` for proper formatting with icons and level prefixes
 - **Log Levels**: Controlled via `LOG_LEVEL` or `AUTH_LOG_LEVEL` environment variable (error, warn, info, debug)
 
@@ -515,9 +531,7 @@ Example output with `DEBUG_STORES=true LOG_LEVEL=debug`:
 [DEBUG] 🐛 [TEST-STORE] File read successfully, size: 121 bytes, keys: uaa
 [DEBUG] 🐛 [TEST-STORE] Parsed service key structure: hasUaa(true), uaaKeys(url, clientid, clientsecret)
 [INFO] ℹ️ [TEST-STORE] Authorization config loaded from /path/to/TRIAL.json: uaaUrl(https://...authentication...), clientId(test-client...)
-[DEBUG] 🐛 [TEST-STORE] Reading env file: /path/to/TRIAL.env
-[DEBUG] 🐛 [TEST-STORE] Env file read successfully, size: 245 bytes
-[INFO] ℹ️ [TEST-STORE] Session loaded for TRIAL: token(2263 chars, eyJ0eXAiOiJKV1QiLCJqaWQiO...Q5ti7aYmEzItIDuLp7axNYo6w), refreshToken(fcc971e1cf1548629216a96b0680eb85-r), sapUrl(https://...abap...)
+[DEBUG] 🐛 [TEST-STORE] Session loaded for TRIAL: token(<redacted, 2263 chars>), expiresAt, refreshToken(<redacted, 34 chars>)
 ```
 
 **Note**: Logging only works when a logger is explicitly provided. Stores will not output anything to console if no logger is passed.
@@ -554,38 +568,34 @@ auth_broker:
     mcp_url: "https://..."
 ```
 
-Integration tests will skip if `test-config.yaml` is not configured or contains placeholder values.
+Integration tests return at once, with a warning, if `test-config.yaml` is not configured or contains placeholder values (the template's). The session write cases write a destination of their own and remove it — they never touch the configured destination's session.
 
 ## Architecture
 
 ### File Operations
 
-- **Service Key Stores** use `JsonFileHandler` to read JSON files
-- **Session Stores** use `EnvFileHandler` to read/write `.env` files
-- All file writes are atomic (write to temp file, then rename)
+- **Service key stores** read JSON files through `JsonFileHandler`
+- **`.env` stores** read with dotenv and write by rewriting only their own keys: every other line — keys of the other role, comments, blank lines — stays byte for byte, so one file may be shared by `EnvDestinationStore` and a session store
+- Every write is atomic: a temporary file of the writer's own (`<file>.<pid>.<random>.tmp`, created exclusively, removed on failure), then a rename
+- A new file is created `0600`; an existing one is narrowed to its owner's bits on every rewrite (`mode & 0o600`: a 2.x `0644` file becomes `0600`), never widened
+- **Concurrent writers lose nothing.** Writes for one destination run one after another within a store instance. Across instances and processes, every writer of a `.env` file — a session store's secret, `EnvDestinationStore`'s means, `deleteSession`, `deleteDestination` — holds an advisory lock, `<file>.lock` (created exclusively), from its read to its rename. A live lock is waited for, retrying, up to 10 s, then the write fails with a `StorageError` naming the file; a lock older than 30 s is a crashed holder's and is taken over. Readers take no lock: a rename is atomic. A writer that does not take the lock (2.x, an editor) is not excluded — its own `<file>.tmp` is never touched, but its rename may replace a concurrent 3.0 write
+- A malformed `SAP_EXPIRES_AT` is reported by reads (`StorageError`) and replaced by the next write instead of blocking it
+- A file that exists but cannot be read raises a `StorageError`; only a missing file is "nothing stored"
 
 ### Store Implementation
 
-- All stores implement `IServiceKeyStore` or `ISessionStore` interfaces from `@mcp-abap-adt/interfaces`
-- Stores accept a single directory path in constructor
-- File-based session stores automatically create directories in constructor if they don't exist
-- Session stores automatically create sessions when calling `setConnectionConfig` or `setAuthorizationConfig` (no need to call `saveSession` first)
-- In-memory stores (`Safe*SessionStore`) don't persist data to disk
-
-### Session Store Behavior
-
-Session stores are designed to work seamlessly with `AuthBroker`:
-
-- **Ready after construction**: File-based stores create directory automatically, stores are ready to use immediately
-- **Automatic session creation**: Calling `setConnectionConfig` or `setAuthorizationConfig` on an empty store creates a new session
-- **ABAP stores**: Require `serviceUrl` when creating new session (from config or `defaultServiceUrl` parameter)
-- **BTP/XSUAA stores**: Require `defaultServiceUrl` in constructor (cannot be obtained from service key), used when creating new sessions if `config.serviceUrl` is not provided
-- **Token updates**: `setConnectionConfig` updates token if provided, preserves existing token if not provided
-- **Session updates**: When updating existing sessions, only `config.serviceUrl` is used if explicitly provided; `defaultServiceUrl` is never used to modify existing sessions
+- Key stores implement `IServiceKeyStore` and answer means only; session stores implement `ISessionStore` and hold the session secret only (both contracts from `@mcp-abap-adt/interfaces-auth-broker`)
+- Every directory is a constructor parameter; no store searches other locations
+- File-based session stores create their directory in the constructor if it is missing
+- In-memory stores (`Safe*SessionStore`) do not persist anything to disk
+- Nothing a store holds reaches a log line or an error message: tokens are logged as `<redacted, N chars>`, means by field name only
 
 ## Dependencies
 
-- `@mcp-abap-adt/interfaces` (^0.1.4) - Interface definitions (`IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `IAuthorizationConfig`, `ILogger`)
+- `@mcp-abap-adt/interfaces-auth-broker` (^1.0.0) - the store contracts (`IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `DestinationGrant`)
+- `@mcp-abap-adt/interfaces-auth-sap` (^2.0.0) - `IAuthorizationConfig`
+- `@mcp-abap-adt/interfaces-auth` (^3.0.0) - `STORE_ERROR_CODES`
+- `@mcp-abap-adt/interfaces-utils` (^1.1.0) - `ILogger`
 - `dotenv` - Environment variable parsing
 
 ## License

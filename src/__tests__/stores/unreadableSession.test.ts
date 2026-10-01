@@ -26,7 +26,7 @@ describe.each([
   ],
   [
     'XsuaaSessionStore',
-    (dir: string) => new XsuaaSessionStore(dir, ''),
+    (dir: string) => new XsuaaSessionStore(dir),
     'XSUAA_JWT_TOKEN=t\n',
   ],
 ])('%s', (_name, make, content) => {
@@ -66,9 +66,8 @@ describe.each([
       await expect(store.getConnectionConfig('D')).rejects.toBeInstanceOf(
         StorageError,
       );
-      await expect(store.getAuthorizationConfig('D')).rejects.toBeInstanceOf(
-        StorageError,
-      );
+      // a session holds no client: nothing to read for it
+      expect(await store.getAuthorizationConfig('D')).toBeNull();
     },
   );
 
