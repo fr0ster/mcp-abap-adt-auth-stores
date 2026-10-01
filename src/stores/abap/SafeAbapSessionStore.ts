@@ -31,8 +31,4 @@ export class SafeAbapSessionStore extends SecretSessionStore {
     if (isEmptySecret(next)) this.sessions.delete(destination);
     else this.sessions.set(destination, { ...next });
   }
-
-  async deleteSession(destination: string): Promise<void> {
-    this.sessions.delete(destination);
-  }
 }

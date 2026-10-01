@@ -41,13 +41,16 @@ import {
   RefusedFieldsError,
   StorageError,
 } from '../../errors/StoreErrors';
+import { assertLogger } from '../../session/SecretSessionStore';
 import { carriedFields } from '../../session/sessionSecret';
+import { assertDestinationName } from '../../storage/destinationName';
 import {
   hasAnyKey,
   readEnvKeys,
   rewriteEnvKeys,
   toError,
 } from '../../storage/envFile';
+import { withFileLock } from '../../storage/fileLock';
 
 /** The client: `IAuthorizationConfig` without the refresh token (a secret). */
 const CLIENT_FIELDS = ['uaaUrl', 'uaaClientId', 'uaaClientSecret'] as const;
@@ -201,6 +204,8 @@ const kindOf = (field: MeansField): Kind => KIND[field] ?? 'string';
 
 export class EnvDestinationStore implements IServiceKeyStore {
   private readonly directory: string;
+  /** Set by `forFile`: every destination resolves to this one file. */
+  private singleFile?: string;
   private readonly fallback?: IServiceKeyStore;
   private readonly variables: DestinationVariables;
   private readonly log?: ILogger;
@@ -210,13 +215,38 @@ export class EnvDestinationStore implements IServiceKeyStore {
    * @param options A fallback key store, the key names, a logger
    */
   constructor(directory: string, options: EnvDestinationStoreOptions = {}) {
+    if (typeof options !== 'object' || options === null) {
+      throw new TypeError(
+        `EnvDestinationStore: got a ${options === null ? 'null' : typeof options} where the options go ({ fallback?, variables?, log? }). The URL — 2.x's defaultServiceUrl — is means: write it with setDestination.`,
+      );
+    }
+    assertLogger('EnvDestinationStore', options.log);
     this.directory = directory;
     this.fallback = options.fallback;
     this.variables = options.variables ?? ABAP_DESTINATION_VARS;
     this.log = options.log;
   }
 
+  /**
+   * One given file for every destination — the hand-written `--env` file,
+   * whatever its name (`.env.dev`, `conn.cfg`). Like `EnvFileSessionStore`,
+   * the destination name is not used to find the file: any name resolves to
+   * it (and is not checked as a file name). The options are the
+   * constructor's; the fallback is still asked by the destination name.
+   */
+  static forFile(
+    filePath: string,
+    options: EnvDestinationStoreOptions = {},
+  ): EnvDestinationStore {
+    const resolved = path.resolve(filePath);
+    const store = new EnvDestinationStore(path.dirname(resolved), options);
+    store.singleFile = resolved;
+    return store;
+  }
+
   private fileOf(destination: string): string {
+    if (this.singleFile) return this.singleFile;
+    assertDestinationName(destination);
     return path.join(this.directory, `${destination}.env`);
   }
 
@@ -330,8 +360,13 @@ export class EnvDestinationStore implements IServiceKeyStore {
     const file = this.fileOf(destination);
     const removesOnly = Object.values(updates).every((v) => v === null);
     if (removesOnly && !fs.existsSync(file)) return;
-    rewriteEnvKeys(file, updates);
-    if (!hasAnyKey(file)) fs.rmSync(file, { force: true });
+    // from the read to the rename, no other writer of the file — a session
+    // store's secret, another process — may merge into the same copy
+    await withFileLock(file, () => {
+      if (removesOnly && !fs.existsSync(file)) return;
+      rewriteEnvKeys(file, updates);
+      if (!hasAnyKey(file)) fs.rmSync(file, { force: true });
+    });
     this.log?.debug(
       `Destination ${destination} written: ${Object.keys(updates).join(', ')}`,
     );

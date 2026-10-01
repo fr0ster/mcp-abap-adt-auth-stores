@@ -44,16 +44,64 @@ export abstract class SecretSessionStore implements ISessionStore {
   private readonly storeName: string;
   private readonly tokenOnly: boolean;
 
+  /** Writes in flight, per destination: each waits for the one before. */
+  private readonly queues = new Map<string, Promise<unknown>>();
+
   protected constructor(options: SecretSessionStoreOptions) {
+    assertLogger(options.name, options.log);
     this.storeName = options.name;
     this.tokenOnly = options.tokenOnly;
     this.log = options.log;
   }
 
-  /** The stored secret, or null when there is none. */
+  /**
+   * The stored secret, or null when there is none. `forWrite`: read for a
+   * write, which replaces a malformed expiry instead of failing on it.
+   */
   protected abstract readSecret(
     destination: string,
+    forWrite?: boolean,
   ): Promise<SessionSecret | null>;
+
+  /**
+   * Run a write's read-merge-write under whatever excludes other writers of
+   * the same storage — the file stores take the file's lock. In memory,
+   * nothing beyond the per-destination queue is needed.
+   */
+  protected async exclusive<T>(
+    _destination: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    return fn();
+  }
+
+  /**
+   * Writes for one destination run one after another within this instance, so
+   * two in flight both land; `exclusive` covers other instances and processes.
+   */
+  private serialize<T>(destination: string, fn: () => Promise<T>): Promise<T> {
+    const before = this.queues.get(destination) ?? Promise.resolve();
+    const run = before.then(() => this.exclusive(destination, fn));
+    const settled = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.queues.set(destination, settled);
+    settled.then(() => {
+      if (this.queues.get(destination) === settled)
+        this.queues.delete(destination);
+    });
+    return run;
+  }
+
+  /**
+   * Remove the session: its secret. A file store removes its secret keys and
+   * keeps every other line; a file left with no key is removed.
+   */
+  async deleteSession(destination: string): Promise<void> {
+    await this.serialize(destination, () => this.writeSecret(destination, {}));
+    this.log?.debug(`Session deleted for destination: ${destination}`);
+  }
 
   /** Replace the stored secret with `next` (an empty one removes it). */
   protected abstract writeSecret(
@@ -126,7 +174,14 @@ export abstract class SecretSessionStore implements ISessionStore {
       destination,
       this.accepted,
     );
-    const current = (await this.readSecret(destination)) ?? {};
+    await this.serialize(destination, () => this.merge(destination, write));
+  }
+
+  private async merge(
+    destination: string,
+    write: SessionSecret,
+  ): Promise<void> {
+    const current = (await this.readSecret(destination, true)) ?? {};
     const next = applySecret(current, write, this.storeName, destination);
     if (this.tokenOnly && !next.authorizationToken) {
       throw new InvalidConfigError(
@@ -139,6 +194,18 @@ export abstract class SecretSessionStore implements ISessionStore {
       `Session saved for ${destination}: ${describeSecret(next)}`,
     );
   }
+}
+
+/**
+ * 2.x took `defaultServiceUrl` where 3.0.0 takes the logger (`XsuaaSessionStore(
+ * dir, url, log)`, `SafeXsuaaSessionStore(url, log)`): a JavaScript caller still
+ * passing it would fail on the first log line. Say so at construction.
+ */
+export function assertLogger(owner: string, log: unknown): void {
+  if (log === undefined || log === null || typeof log === 'object') return;
+  throw new TypeError(
+    `${owner}: got a ${typeof log} where the logger goes. 3.0.0 removed defaultServiceUrl from the session store constructors — the URL is means: state it in a key store (EnvDestinationStore).`,
+  );
 }
 
 /** What a log line may say about a secret: which parts are there, and lengths. */

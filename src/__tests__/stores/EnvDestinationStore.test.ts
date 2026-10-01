@@ -384,6 +384,67 @@ describe('EnvDestinationStore', () => {
     });
   });
 
+  describe('forFile — one given file, whatever the destination', () => {
+    it('reads a hand-written .env.dev for any destination name', async () => {
+      const file = path.join(dir, '.env.dev');
+      fs.writeFileSync(
+        file,
+        'SAP_URL=https://h.example\nSAP_AUTH_TYPE=jwt\nSAP_GRANT_TYPE=none\nSAP_JWT_TOKEN=t\n',
+      );
+      const store = EnvDestinationStore.forFile(file);
+      const expected = {
+        serviceUrl: 'https://h.example',
+        authType: 'jwt',
+        grantType: 'none',
+      };
+      expect(await store.getConnectionConfig('default')).toEqual(expected);
+      expect(await store.getConnectionConfig('anything')).toEqual(expected);
+      expect(await store.getConnectionConfig('../not/a/path')).toEqual(
+        expected,
+      );
+    });
+
+    it('writes to that file, and shares it with EnvFileSessionStore', async () => {
+      const file = path.join(dir, 'conn.cfg');
+      const means = EnvDestinationStore.forFile(file);
+      const { EnvFileSessionStore } = await import(
+        '../../stores/env/EnvFileSessionStore'
+      );
+      const secret = new EnvFileSessionStore(file);
+
+      await means.setDestination('x', {
+        serviceUrl: 'https://h',
+        authType: 'jwt',
+      });
+      await secret.saveSession('x', { authorizationToken: 'tok' });
+      await means.setDestination('y', { grantType: 'none' });
+
+      expect(await means.getConnectionConfig('z')).toEqual({
+        serviceUrl: 'https://h',
+        authType: 'jwt',
+        grantType: 'none',
+      });
+      expect(await secret.loadSession('z')).toEqual({
+        authorizationToken: 'tok',
+      });
+      expect(fs.readdirSync(dir)).toEqual(['conn.cfg']);
+    });
+
+    it('takes the same options (variables, fallback)', async () => {
+      const file = path.join(dir, 'x.env');
+      fs.writeFileSync(file, 'XSUAA_MCP_URL=https://mcp\n');
+      const store = EnvDestinationStore.forFile(file, {
+        variables: XSUAA_DESTINATION_VARS,
+        fallback: fakeKeyStore({ sapClient: '001' }, CLIENT),
+      });
+      expect(await store.getConnectionConfig('D')).toEqual({
+        serviceUrl: 'https://mcp',
+        sapClient: '001',
+      });
+      expect(await store.getAuthorizationConfig('D')).toEqual(CLIENT);
+    });
+  });
+
   it('answers null for a destination it has nothing for', async () => {
     const store = new EnvDestinationStore(dir);
     expect(await store.getConnectionConfig('NONE')).toBeNull();

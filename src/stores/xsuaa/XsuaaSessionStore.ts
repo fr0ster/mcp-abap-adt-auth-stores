@@ -19,6 +19,8 @@ import {
 } from '../../session/fileSecret';
 import { SecretSessionStore } from '../../session/SecretSessionStore';
 import type { SessionSecret } from '../../session/sessionSecret';
+import { assertDestinationName } from '../../storage/destinationName';
+import { withFileLock } from '../../storage/fileLock';
 import { XSUAA_SESSION_VARS } from '../../utils/constants';
 
 const KEYS: SecretKeys = {
@@ -48,13 +50,27 @@ export class XsuaaSessionStore extends SecretSessionStore {
   }
 
   private fileOf(destination: string): string {
+    assertDestinationName(destination);
     return path.join(this.directory, `${destination}.env`);
+  }
+
+  protected async exclusive<T>(
+    destination: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    return withFileLock(this.fileOf(destination), fn);
   }
 
   protected async readSecret(
     destination: string,
+    forWrite = false,
   ): Promise<SessionSecret | null> {
-    return readFileSecret(this.fileOf(destination), KEYS, destination);
+    return readFileSecret(
+      this.fileOf(destination),
+      KEYS,
+      destination,
+      forWrite,
+    );
   }
 
   protected async writeSecret(
@@ -62,14 +78,5 @@ export class XsuaaSessionStore extends SecretSessionStore {
     next: SessionSecret,
   ): Promise<void> {
     writeFileSecret(this.fileOf(destination), KEYS, next);
-  }
-
-  /**
-   * Remove the session: its secret keys. Other lines stay; a file left with no
-   * key is removed.
-   */
-  async deleteSession(destination: string): Promise<void> {
-    await this.writeSecret(destination, {});
-    this.log?.debug(`Session deleted for destination: ${destination}`);
   }
 }

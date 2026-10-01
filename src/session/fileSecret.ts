@@ -20,6 +20,11 @@ export function readFileSecret(
   filePath: string,
   keys: SecretKeys,
   destination: string,
+  /**
+   * For a write: a malformed expiry is ignored, so the write replaces it
+   * instead of failing on it. A read reports it.
+   */
+  forWrite = false,
 ): SessionSecret | null {
   let vars: Record<string, string> | null;
   try {
@@ -48,6 +53,7 @@ export function readFileSecret(
   if (expiresAt) {
     const value = Number(expiresAt);
     if (!/^\d+$/.test(expiresAt) || !Number.isSafeInteger(value)) {
+      if (forWrite) return withoutExpiry(secret, vars, keys);
       throw new StorageError(
         'read',
         `Cannot read the session for "${destination}": ${keys.expiresAt} is not epoch milliseconds`,
@@ -84,4 +90,15 @@ export function writeFileSecret(
   if (removesOnly && !fs.existsSync(filePath)) return;
   rewriteEnvKeys(filePath, updates);
   if (!hasAnyKey(filePath)) fs.rmSync(filePath, { force: true });
+}
+
+/** The rest of the secret, when the expiry cannot be read (for a write). */
+function withoutExpiry(
+  secret: SessionSecret,
+  vars: Record<string, string>,
+  keys: SecretKeys,
+): SessionSecret {
+  const refresh = vars[keys.refreshToken]?.trim();
+  if (refresh) secret.refreshToken = refresh;
+  return secret;
 }

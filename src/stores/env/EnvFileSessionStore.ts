@@ -18,6 +18,7 @@ import {
 } from '../../session/fileSecret';
 import { SecretSessionStore } from '../../session/SecretSessionStore';
 import type { SessionSecret } from '../../session/sessionSecret';
+import { withFileLock } from '../../storage/fileLock';
 import { ABAP_SESSION_VARS } from '../../utils/constants';
 
 const KEYS: SecretKeys = {
@@ -41,8 +42,16 @@ export class EnvFileSessionStore extends SecretSessionStore {
 
   protected async readSecret(
     destination: string,
+    forWrite = false,
   ): Promise<SessionSecret | null> {
-    return readFileSecret(this.envFilePath, KEYS, destination);
+    return readFileSecret(this.envFilePath, KEYS, destination, forWrite);
+  }
+
+  protected async exclusive<T>(
+    _destination: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    return withFileLock(this.envFilePath, fn);
   }
 
   protected async writeSecret(
@@ -50,11 +59,6 @@ export class EnvFileSessionStore extends SecretSessionStore {
     next: SessionSecret,
   ): Promise<void> {
     writeFileSecret(this.envFilePath, KEYS, next);
-  }
-
-  /** Remove the secret keys from the file; every other line stays. */
-  async deleteSession(destination: string): Promise<void> {
-    await this.writeSecret(destination, {});
   }
 
   /** The stored access token. */
