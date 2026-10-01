@@ -6,10 +6,8 @@
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type {
-  IAuthorizationConfig,
-  IConnectionConfig,
-} from '@mcp-abap-adt/interfaces-auth-sap';
+import type { IConnectionConfig } from '@mcp-abap-adt/interfaces-auth-broker';
+import type { IAuthorizationConfig } from '@mcp-abap-adt/interfaces-auth-sap';
 import { XsuaaSessionStore } from '../../../stores/xsuaa/XsuaaSessionStore';
 import { createTestLogger } from '../../helpers/testLogger';
 

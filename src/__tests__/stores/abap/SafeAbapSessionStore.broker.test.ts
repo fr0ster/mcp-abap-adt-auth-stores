@@ -3,10 +3,8 @@
  * Tests how store behaves when used as in AuthBroker (without saveSession)
  */
 
-import type {
-  IAuthorizationConfig,
-  IConnectionConfig,
-} from '@mcp-abap-adt/interfaces-auth-sap';
+import type { IConnectionConfig } from '@mcp-abap-adt/interfaces-auth-broker';
+import type { IAuthorizationConfig } from '@mcp-abap-adt/interfaces-auth-sap';
 import { SafeAbapSessionStore } from '../../../stores/abap/SafeAbapSessionStore';
 import { createTestLogger } from '../../helpers/testLogger';
 

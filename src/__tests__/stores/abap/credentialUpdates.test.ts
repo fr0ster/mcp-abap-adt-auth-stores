@@ -10,7 +10,10 @@
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { IConfig, ISessionStore } from '@mcp-abap-adt/interfaces-auth-sap';
+import type {
+  IConfig,
+  ISessionStore,
+} from '@mcp-abap-adt/interfaces-auth-broker';
 import { saveTokenToEnv } from '../../../storage/abap/tokenStorage';
 import { AbapSessionStore } from '../../../stores/abap/AbapSessionStore';
 import { SafeAbapSessionStore } from '../../../stores/abap/SafeAbapSessionStore';

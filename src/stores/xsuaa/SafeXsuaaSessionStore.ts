@@ -6,11 +6,11 @@
  */
 
 import type {
-  IAuthorizationConfig,
   IConfig,
   IConnectionConfig,
   ISessionStore,
-} from '@mcp-abap-adt/interfaces-auth-sap';
+} from '@mcp-abap-adt/interfaces-auth-broker';
+import type { IAuthorizationConfig } from '@mcp-abap-adt/interfaces-auth-sap';
 import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
 import { formatToken } from '../../utils/formatting';
 

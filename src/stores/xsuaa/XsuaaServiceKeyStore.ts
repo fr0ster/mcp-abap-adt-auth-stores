@@ -3,11 +3,11 @@
  */
 
 import type {
-  IAuthorizationConfig,
   IConfig,
   IConnectionConfig,
   IServiceKeyStore,
-} from '@mcp-abap-adt/interfaces-auth-sap';
+} from '@mcp-abap-adt/interfaces-auth-broker';
+import type { IAuthorizationConfig } from '@mcp-abap-adt/interfaces-auth-sap';
 import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
 import { JsonFileHandler } from '../../utils/JsonFileHandler';
 
