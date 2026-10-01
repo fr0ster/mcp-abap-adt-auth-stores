@@ -56,7 +56,9 @@ the **secret** that authorizes within a session — `authorizationToken` or
   instead of failing later with `this.log?.debug is not a function`.
 - **One secret kind at a time.** Writing a token clears stored cookies and
   writing cookies clears the token; `expiresAt` is written and cleared with
-  its credential; `''` clears. The session no longer states an `authType`
+  its credential; `''` clears, and clearing the kind not held changes
+  nothing; `expiresAt` must be a non-negative whole number of epoch
+  milliseconds, what the file stores read back. The session no longer states an `authType`
   (2.0.0's `SAP_AUTH_TYPE` and credential types are means now); the 2.0.0
   refusal of "two credentials and no `authType`" becomes the refusal of a
   token and cookies in one write.

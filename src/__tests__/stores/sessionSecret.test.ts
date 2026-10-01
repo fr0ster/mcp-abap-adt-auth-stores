@@ -255,6 +255,32 @@ describe.each(VARIANTS)(
       });
     });
 
+    it.each([
+      ['a fraction', EXPIRES + 0.5],
+      ['a negative number', -1],
+      ['beyond a safe integer', Number.MAX_SAFE_INTEGER + 2],
+    ])(
+      'refuses expiresAt as %s, so a write never leaves a session it cannot read',
+      async (_label, expiresAt) => {
+        const store = make(dir);
+        await store.saveSession('D', {
+          authorizationToken: TOKEN,
+          expiresAt: EXPIRES,
+        });
+        const failure = await store
+          .saveSession('D', { authorizationToken: TOKEN, expiresAt })
+          .catch((e: unknown) => e);
+        expect(failure).toBeInstanceOf(Error);
+        expect(
+          (failure as { missingFields?: string[] }).missingFields,
+        ).toEqual(['expiresAt']);
+        expect(await store.loadSession('D')).toEqual({
+          authorizationToken: TOKEN,
+          expiresAt: EXPIRES,
+        });
+      },
+    );
+
     it('answers no session when nothing was written', async () => {
       const store = make(dir);
       expect(await store.loadSession('D')).toBeNull();
@@ -328,6 +354,29 @@ describe.each(VARIANTS)(
         await store.setConnectionConfig('D', { authorizationToken: TOKEN });
         expect(await store.loadSession('D')).toEqual({
           authorizationToken: TOKEN,
+        });
+      });
+
+      it('clearing the kind not held keeps the held credential and its expiry', async () => {
+        const store = make(dir);
+        await store.saveSession('D', {
+          sessionCookies: COOKIES,
+          expiresAt: EXPIRES,
+        });
+        await store.saveSession('D', { authorizationToken: '' });
+        expect(await store.loadSession('D')).toEqual({
+          sessionCookies: COOKIES,
+          expiresAt: EXPIRES,
+        });
+
+        await store.saveSession('D', {
+          authorizationToken: TOKEN,
+          expiresAt: EXPIRES + 1,
+        });
+        await store.saveSession('D', { sessionCookies: '' });
+        expect(await store.loadSession('D')).toEqual({
+          authorizationToken: TOKEN,
+          expiresAt: EXPIRES + 1,
         });
       });
 

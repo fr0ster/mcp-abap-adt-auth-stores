@@ -76,9 +76,14 @@ export function takeSecret(
     secret[field] = value;
   }
   if (obj.expiresAt !== undefined) {
-    if (typeof obj.expiresAt !== 'number' || !Number.isFinite(obj.expiresAt)) {
+    // What a file store can read back: a non-negative safe integer.
+    if (
+      typeof obj.expiresAt !== 'number' ||
+      !Number.isSafeInteger(obj.expiresAt) ||
+      obj.expiresAt < 0
+    ) {
       throw new InvalidConfigError(
-        `${holder}: expiresAt for "${destination}" must be a number (epoch milliseconds)`,
+        `${holder}: expiresAt for "${destination}" must be a non-negative whole number (epoch milliseconds)`,
         ['expiresAt'],
       );
     }
@@ -93,7 +98,8 @@ export function takeSecret(
  * - A credential written (a token or cookies) replaces the other kind, and its
  *   `expiresAt` is what the write gives — none given, none kept: a new
  *   credential does not inherit the old one's expiry.
- * - A credential given as `''` clears it, and its `expiresAt` with it.
+ * - A credential given as `''` clears it, and its `expiresAt` with it; clearing
+ *   the kind not held leaves the held credential and its expiry as they are.
  * - A write of both kinds at once is refused: a session holds one.
  * - `expiresAt` alone updates the expiry of the credential held.
  * - `refreshToken` given is kept, `''` clears it, absent leaves it.
@@ -115,18 +121,22 @@ export function applySecret(
     write.authorizationToken !== undefined ||
     write.sessionCookies !== undefined;
   if (credentialGiven) {
-    delete next.expiresAt;
     if (write.authorizationToken) {
       next.authorizationToken = write.authorizationToken;
       delete next.sessionCookies;
+      delete next.expiresAt;
     } else if (write.sessionCookies) {
       next.sessionCookies = write.sessionCookies;
       delete next.authorizationToken;
+      delete next.expiresAt;
     } else {
-      // '' clears the kind given
+      // '' clears the kind given; the expiry goes only with the credential
+      // it belongs to, so clearing the kind not held leaves both alone
       if (write.authorizationToken !== undefined)
         delete next.authorizationToken;
       if (write.sessionCookies !== undefined) delete next.sessionCookies;
+      if (!next.authorizationToken && !next.sessionCookies)
+        delete next.expiresAt;
     }
     if (
       write.expiresAt !== undefined &&
