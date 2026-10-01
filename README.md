@@ -107,7 +107,7 @@ Every session store follows the same rules:
 - **The XSUAA stores hold a token.** They refuse cookies, and a write that would leave the session without a token.
 - **What is answered.** `loadSession`: the four secret fields present, or `null` when there are none. `getConnectionConfig`: the token or cookies and `expiresAt`, or `null`.
 - **A file store touches only its own keys.** A write sets or removes the secret keys and leaves every other line of the file — keys, comments, blank lines — byte for byte. `deleteSession` removes the secret keys, and the file only when no key is left.
-- Constructors: `AbapSessionStore(directory, log?)`, `XsuaaSessionStore(directory, log?)`, `EnvFileSessionStore(envFilePath, log?)`, `SafeAbapSessionStore(log?)`, `SafeXsuaaSessionStore(log?)`. File stores create their directory if it is missing.
+- Constructors: `AbapSessionStore(directory, log?)`, `XsuaaSessionStore(directory, log?)`, `EnvFileSessionStore(envFilePath, log?)`, `SafeAbapSessionStore(log?)`, `SafeXsuaaSessionStore(log?)`. File stores create their directory if it is missing. A string where the logger goes — 2.x's `defaultServiceUrl`, passed by a JavaScript caller — throws a `TypeError` at construction saying so.
 
 ## Usage
 
@@ -180,13 +180,16 @@ await sessionStore.saveSession('TRIAL', {
 
 ### EnvDestinationStore
 
-`new EnvDestinationStore(directory, { fallback?, variables?, log? })` — `directory` has no default.
+`new EnvDestinationStore(directory, { fallback?, variables?, log? })` — `directory` has no default; a destination is `<directory>/<destination>.env`.
+
+`EnvDestinationStore.forFile(path, { fallback?, variables?, log? })` — one given file, whatever its name (`.env.dev`, `conn.cfg`): every destination name resolves to that file and is not used to find it, as with `EnvFileSessionStore`. The fallback is still asked by the destination name.
 
 - **Reads** every means field of `IConnectionConfig` (`getConnectionConfig`) and the client (`getAuthorizationConfig`: answered when `uaaUrl`, `uaaClientId` and `uaaClientSecret` are all stated; `''` is stated). `getServiceKey` answers both together.
 - **Answers means only**: no token, cookies, expiry or refresh token, from the file or the fallback.
-- **Infers nothing**: a file without `SAP_AUTH_TYPE` states no type; a type or grant it does not know is answered as stored, for the consumer to name.
+- **Infers nothing**: a file without `SAP_AUTH_TYPE` states no type; a type or grant it does not know is answered as stored, for the consumer to name. With a fallback, the missing type comes from the fallback: a 1.x/2.x `basic` file without `SAP_AUTH_TYPE` beside a SAP service key reads as `authType: 'jwt'` (the key's) **with** the file's `username` / `password` — state `SAP_AUTH_TYPE=basic` in such a file, or `SAP_AUTH_TYPE=jwt` and `SAP_GRANT_TYPE` for a token destination.
 - **Fallback**: another `IServiceKeyStore` fills, field by field, what the file leaves out. A field the file states — `''` included — wins.
-- **Writes** (`setDestination`, `deleteDestination`): only its means keys. A secret field, or any field that is not means, is refused with a `RefusedFieldsError`; a malformed value (an unknown `authType` or `grantType`, a scope with whitespace, a non-boolean `samlIdpInitiated`) with an `InvalidConfigError` naming the field. A new file is created readable by its owner alone (`0600`); an existing one keeps its mode.
+- **Writes** (`setDestination`, `deleteDestination`): only its means keys. A secret field, or any field that is not means, is refused with a `RefusedFieldsError`; a malformed value (an unknown `authType` or `grantType`, a scope with whitespace, a non-boolean `samlIdpInitiated`) with an `InvalidConfigError` naming the field.
+- **Destination names** are file names: one containing `/`, `\` or `..` is refused (`InvalidConfigError`) by every store that builds a path from it — `EnvDestinationStore`, `AbapSessionStore`, `XsuaaSessionStore` — for reads and writes. `''` is the file named `.env`. (`forFile` and `EnvFileSessionStore` do not use the name.)
 - **Key names**: `variables: ABAP_DESTINATION_VARS` (the default) or `XSUAA_DESTINATION_VARS`.
 
 ### Env file format
@@ -250,7 +253,9 @@ SAP_EXPIRES_AT=1790000000000              # epoch ms
 SAP_REFRESH_TOKEN=<refresh token>
 ```
 
-`XSUAA_DESTINATION_VARS` and `XSUAA_SESSION_VARS` are the same with `XSUAA_`, the URL under `XSUAA_MCP_URL`. Values with spaces or special characters are written in quotes dotenv reads back unchanged; a value with a line break is refused (certificates are base64-encoded for that reason).
+`XSUAA_DESTINATION_VARS` and `XSUAA_SESSION_VARS` are the same with `XSUAA_`, the URL under `XSUAA_MCP_URL`. Values with spaces or special characters are written in the first quote character they do not contain — `'`, then `` ` ``, then `"` — so dotenv reads them back unchanged. Two values cannot be written, and are refused with a `StorageError` naming the key: one with a line break (certificates are base64-encoded for that reason), and one containing `'`, `` ` `` and `"` together (no dotenv quoting reads it back).
+
+**One key per line.** The stores write one `KEY=value` per line. In a hand-written file they find a key where dotenv does — `KEY=value`, `export KEY=value`, `KEY: value`, a quoted value spanning lines, a duplicate (the last wins in dotenv; a write keeps one) — and change nothing else, CRLF line ends included. Every rewrite is read back with dotenv before it replaces the file; if any key would not read as intended, the write is refused with a `StorageError` naming the file and the key, and the file is left alone.
 
 ### 2.x session files
 
@@ -261,7 +266,7 @@ A file written by auth-stores 2.x (or auth-broker 3.x) holds means and secret to
 | `SAP_JWT_TOKEN`, `SAP_SESSION_COOKIES_B64`, `SAP_REFRESH_TOKEN` (and the new `SAP_EXPIRES_AT`) | secret | the session store |
 | `SAP_URL`, `SAP_AUTH_TYPE`, `SAP_USERNAME`, `SAP_PASSWORD`, `SAP_SNC_*`, `SAP_UAA_URL`, `SAP_UAA_CLIENT_ID`, `SAP_UAA_CLIENT_SECRET`, `SAP_CLIENT`, `SAP_LANGUAGE` | means | `EnvDestinationStore`, pointed at the same directory |
 
-A session write rewrites only the secret keys, so a 2.x file stays a complete 2.x file. A 2.x `basic` or `snc` file is a complete destination as it is. A 2.x `jwt` or `saml` file states no grant — 2.x never wrote one — so add `SAP_GRANT_TYPE` (by hand, or through `setDestination`).
+A session write rewrites only the secret keys, so a 2.x file stays a complete 2.x file. A 2.x `basic` or `snc` file is a complete destination as it is. A 2.x `jwt` or `saml` file states no grant — 2.x never wrote one — so add `SAP_GRANT_TYPE` (by hand, or through `setDestination`). A 3.x public-client file (`mcp-sso` stripped its `__public__` secret line) has no `SAP_UAA_CLIENT_SECRET`, so no client is answered for it: add the empty line `SAP_UAA_CLIENT_SECRET=`, or run the 4.0 CLI command again. A file without `SAP_AUTH_TYPE` read with a service key fallback takes the key's `jwt` — see *Infers nothing* above.
 
 ### BTP / XSUAA stores
 
@@ -286,19 +291,17 @@ const safeSessionStore = new SafeXsuaaSessionStore(logger);
 
 ### EnvFileSessionStore (single file)
 
-`EnvFileSessionStore` holds the secret in one given file — the `--env /path/to/.env` case. The means in that file are read by an `EnvDestinationStore` over the file's directory, the destination being the file name without `.env` (`''` for a file named `.env`). A file whose name does not end in `.env` cannot be read that way.
+`EnvFileSessionStore` holds the secret in one given file — the `--env /path/to/.env.dev` case — and `EnvDestinationStore.forFile` reads and writes the means in the same file. Neither uses the destination name to find the file: any name resolves to it.
 
 ```typescript
-import * as path from 'node:path';
 import { EnvDestinationStore, EnvFileSessionStore } from '@mcp-abap-adt/auth-stores';
 
-const envPath = '/path/to/.env';
+const envPath = '/path/to/.env.dev';
 const sessionStore = new EnvFileSessionStore(envPath, logger);
-const keyStore = new EnvDestinationStore(path.dirname(envPath));
-const destination = path.basename(envPath).replace(/\.env$/, ''); // '' here
+const keyStore = EnvDestinationStore.forFile(envPath, { log: logger });
 
-const means = await keyStore.getConnectionConfig(destination);
-const secret = await sessionStore.loadSession(destination); // the file's secret keys
+const means = await keyStore.getConnectionConfig('default');
+const secret = await sessionStore.loadSession('default'); // the file's secret keys
 ```
 
 Besides the contract it offers `getToken`, `setToken`, `getRefreshToken`, `setRefreshToken`. 2.x's `getAuthType()` (the type is means), `save()` and `clear()` (the in-memory layer is gone: writes reach the file at once) were removed.
@@ -573,7 +576,10 @@ Integration tests return at once, with a warning, if `test-config.yaml` is not c
 
 - **Service key stores** read JSON files through `JsonFileHandler`
 - **`.env` stores** read with dotenv and write by rewriting only their own keys: every other line — keys of the other role, comments, blank lines — stays byte for byte, so one file may be shared by `EnvDestinationStore` and a session store
-- Every write is atomic (a temporary file, then a rename); a new file is created `0600`, an existing one keeps its mode
+- Every write is atomic: a temporary file of the writer's own (`<file>.<pid>.<random>.tmp`, created exclusively, removed on failure), then a rename
+- A new file is created `0600`; an existing one is narrowed to its owner's bits on every rewrite (`mode & 0o600`: a 2.x `0644` file becomes `0600`), never widened
+- **Concurrent writers lose nothing.** Writes for one destination run one after another within a store instance. Across instances and processes, every writer of a `.env` file — a session store's secret, `EnvDestinationStore`'s means, `deleteSession`, `deleteDestination` — holds an advisory lock, `<file>.lock` (created exclusively), from its read to its rename. A live lock is waited for, retrying, up to 10 s, then the write fails with a `StorageError` naming the file; a lock older than 30 s is a crashed holder's and is taken over. Readers take no lock: a rename is atomic. A writer that does not take the lock (2.x, an editor) is not excluded — its own `<file>.tmp` is never touched, but its rename may replace a concurrent 3.0 write
+- A malformed `SAP_EXPIRES_AT` is reported by reads (`StorageError`) and replaced by the next write instead of blocking it
 - A file that exists but cannot be read raises a `StorageError`; only a missing file is "nothing stored"
 
 ### Store Implementation

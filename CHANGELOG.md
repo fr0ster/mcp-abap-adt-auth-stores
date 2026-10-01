@@ -51,6 +51,9 @@ the **secret** that authorizes within a session — `authorizationToken` or
   `AbapSessionStore(directory, log?)`, `SafeAbapSessionStore(log?)`,
   `XsuaaSessionStore(directory, log?)` (was `(directory, defaultServiceUrl,
   log?)`), `SafeXsuaaSessionStore(log?)` (was `(defaultServiceUrl, log?)`).
+  A string where the logger goes — a JavaScript caller still passing
+  `defaultServiceUrl` — throws a `TypeError` at construction saying so,
+  instead of failing later with `this.log?.debug is not a function`.
 - **One secret kind at a time.** Writing a token clears stored cookies and
   writing cookies clears the token; `expiresAt` is written and cleared with
   its credential; `''` clears. The session no longer states an `authType`
@@ -89,6 +92,9 @@ the **secret** that authorizes within a session — `authorizationToken` or
   malformed value — an unknown `authType` or `grantType`, say — naming the
   field (`InvalidConfigError`). `deleteDestination` removes the means keys.
   Its directory is a constructor parameter with no default.
+  `EnvDestinationStore.forFile(path, options)` reads and writes one given
+  file — a hand-written `--env` file, whatever its name (`.env.dev`) — for
+  every destination name, as `EnvFileSessionStore` does.
 - **`expiresAt`** is kept with the token or cookies (`SAP_EXPIRES_AT`,
   `XSUAA_EXPIRES_AT`, epoch milliseconds).
 - `RefusedFieldsError` (code `INVALID_CONFIG`, `fields`); the key tables
@@ -109,10 +115,36 @@ the **secret** that authorizes within a session — `authorizationToken` or
   either order — and a 2.x file stays a complete 2.x file.
 - `deleteSession` of a file store removes the secret keys, and the file only
   when no key is left — the means in a shared file stay.
+- **Keys are found where dotenv finds them.** A write locates each key with
+  dotenv's own line pattern — `KEY=value`, `export KEY=value`, `KEY: value`,
+  a quoted value spanning lines, duplicates — and keeps every other byte, CRLF
+  line ends included. The result is parsed back before it replaces the file;
+  a key that would not read as intended refuses the write (`StorageError`
+  naming the file and the key) and leaves the file alone. The stores write
+  one key per line.
 - Values that need quoting are written in quotes dotenv reads back unchanged
-  (single quotes first, then backticks, then double quotes); a value with a
-  line break is refused naming its key. A new file is created `0600`; an
-  existing file keeps its mode.
+  (single quotes first, then backticks, then double quotes). A value with a
+  line break, or containing `'`, `` ` `` and `"` together, is refused naming
+  its key.
+- **File mode.** A new file is created `0600`; an existing one is narrowed to
+  its owner's bits on every rewrite (`mode & 0o600` — a 2.x `0644` file
+  becomes `0600`), never widened.
+- **Concurrent writers lose nothing.** Writes for one destination run one
+  after another within a store instance. Every writer of a `.env` file — a
+  session store's secret, `EnvDestinationStore`'s means, `deleteSession`,
+  `deleteDestination` — holds an advisory lock (`<file>.lock`, created
+  exclusively) from its read to its rename, waiting up to 10 s for a live
+  holder and taking over a lock older than 30 s; it writes through a
+  temporary file of its own (`<file>.<pid>.<random>.tmp`, created
+  exclusively, removed on failure). 2.x used one fixed `<file>.tmp`: two
+  writers of a shared file could empty each other's copy and lose a key set
+  for good (found in review, reproduced with two processes).
+- **Destination names** containing `/`, `\` or `..` are refused
+  (`InvalidConfigError`) by `AbapSessionStore`, `XsuaaSessionStore` and
+  `EnvDestinationStore`, for reads and writes: they reached outside the
+  directory.
+- A malformed `SAP_EXPIRES_AT` / `XSUAA_EXPIRES_AT` is reported by reads and
+  replaced by the next write instead of blocking every write.
 
 ### Removed
 
@@ -151,9 +183,50 @@ the **secret** that authorizes within a session — `authorizationToken` or
 - **Imports:** take `ISessionStore`, `IServiceKeyStore`, `IConfig`,
   `IConnectionConfig` from `@mcp-abap-adt/interfaces-auth-broker`,
   `IAuthorizationConfig` from `@mcp-abap-adt/interfaces-auth-sap` ^2.0.0.
-- **`EnvFileSessionStore#getAuthType()`** is gone: read `authType` from an
-  `EnvDestinationStore` over the file's directory, the destination being the
-  file name without `.env` (`''` for a file named `.env`).
+- **`EnvFileSessionStore#getAuthType()`** is gone: read `authType` from
+  `EnvDestinationStore.forFile(samePath).getConnectionConfig(name)`.
+- **A 3.x public-client file** (written by `mcp-sso`, which wrote
+  `__public__` and then stripped the line) has no `SAP_UAA_CLIENT_SECRET`, so
+  `EnvDestinationStore` answers no client for it. Add the empty line
+  `SAP_UAA_CLIENT_SECRET=` (or `setDestination(name, { uaaClientSecret: '' })`),
+  or run the 4.0 CLI command again.
+- **A 1.x file without `SAP_AUTH_TYPE`** states no type; with a service key
+  fallback it takes the key's `authType: 'jwt'` beside the file's user and
+  password. State `SAP_AUTH_TYPE` (and `SAP_GRANT_TYPE` for a token
+  destination) in such files.
+
+### Migration of the known consumers
+
+Each of these is on auth-stores 1.x/2.x with auth-broker 3.x today and stays
+there until it moves to auth-broker 4.0 (whose own range is `^3.0.0`); none
+can take 3.0.0 alone. What each must change when it moves:
+
+- **`mcp-abap-adt` (the server)**, `src/lib/auth/brokerFactory.ts`:
+  - `sessionStore.getAuthType()` (`:649`, the `--env` path) is gone: build
+    `EnvDestinationStore.forFile(envFilePath)` as the key store beside
+    `EnvFileSessionStore(envFilePath)`, and read the type from it.
+  - Seeding sessions from service keys through `setConnectionConfig` /
+    `setAuthorizationConfig` (`:519-562`) is refused: write `authType` and
+    `grantType` (and nothing else the key already answers) through an
+    `EnvDestinationStore` with the service key store as its fallback.
+  - `new BtpSessionStore(sessionsDir, '', storeLogger)` (`:425`) and
+    `new SafeBtpSessionStore('', storeLogger)` (`:445`) throw the
+    constructor `TypeError`: drop the `''`.
+- **`mcp-abap-adt-proxy`**: `new XsuaaSessionStore(firstSessionPath, '')` and
+  `new SafeXsuaaSessionStore('')` (`src/lib/stores.ts:181-182`) throw the
+  constructor `TypeError`. Its `TargetUrlSessionStore`
+  (`src/proxy/targetUrlSessionStore.ts`) passes the broker's 3.x writes —
+  which carry `serviceUrl` and the client — through to the inner store, which
+  now refuses them. It stays on auth-stores 2.x (or 1.x) with broker 3.x until
+  it migrates; then the target URL is means a key store answers.
+- **`mcp-calm-server`**: `createSessionStore` (`src/server/auth/buildBroker.ts:70`)
+  calls `new XsuaaSessionStore(directory, '', logger)` — the constructor
+  `TypeError`. `buildLegacyShimStore` (`src/server/auth/legacyEnvShim.ts:17-18`)
+  writes the client into a `SafeXsuaaSessionStore` with
+  `setAuthorizationConfig`, which 3.0.0 refuses. 3.0.0 ships no in-memory key
+  store (decision D6: the file store only), so such a shim needs a small
+  `IServiceKeyStore` of calm's own that answers the three `CALM_UAA_*` values
+  (or an `EnvDestinationStore` over a file it writes).
 
 ## [2.0.0] - 2026-09-30
 
