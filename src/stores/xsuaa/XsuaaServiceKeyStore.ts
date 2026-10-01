@@ -160,9 +160,12 @@ export class XsuaaServiceKeyStore implements IServiceKeyStore {
       `Connection config loaded for ${destination}: serviceUrl(${serviceUrl ? `${serviceUrl.substring(0, 40)}...` : 'none'}), client(${abap?.client || data.sap_client || data.client || 'none'})`,
     );
 
+    // A key holds an OAuth client and nothing else: a token destination.
+    // Which grant it uses the key cannot state, so none is answered; and a
+    // token is secret — a key store answers none.
     return {
       serviceUrl,
-      authorizationToken: '', // Service key doesn't contain tokens
+      authType: 'jwt',
       sapClient: (abap?.client || data.sap_client || data.client) as
         | string
         | undefined,

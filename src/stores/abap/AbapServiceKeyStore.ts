@@ -176,9 +176,12 @@ export class AbapServiceKeyStore implements IServiceKeyStore {
       const sapClient = key.abap?.client || key.sap_client || key.client;
       const language = key.abap?.language || key.language;
 
-      const result = {
+      // A key holds an OAuth client and nothing else: a token destination.
+      // Which grant it uses the key cannot state, so none is answered; and a
+      // token is secret — a key store answers none.
+      const result: IConnectionConfig = {
         serviceUrl,
-        authorizationToken: '', // Service key doesn't contain tokens
+        authType: 'jwt',
         sapClient,
         language,
       };
