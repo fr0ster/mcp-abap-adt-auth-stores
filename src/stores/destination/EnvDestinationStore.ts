@@ -13,8 +13,9 @@
  *   `XSUAA_*` (`XSUAA_DESTINATION_VARS`). A 2.x session file is already a
  *   readable destination; nothing is inferred from it — a file without
  *   `SAP_AUTH_TYPE` states no type.
- * - **A public client** is `uaaClientSecret: ''`, written as an empty value
- *   and answered as `''`.
+ * - **The client is its id**: answered whenever `uaaClientId` is stated; a
+ *   `uaaUrl` or `uaaClientSecret` not stated is answered as `''`. A public
+ *   client is a secret of `''`, written as an empty value or not at all.
  * - **A fallback** `IServiceKeyStore` (a SAP service key store, say) fills, field
  *   by field, what the file leaves out: a key supplies the client and URL, the
  *   file the grant. A field the file states — `''` included — wins.
@@ -298,16 +299,19 @@ export class EnvDestinationStore implements IServiceKeyStore {
       else if (fallback && typeof fallback[field] === 'string')
         client[field] = fallback[field];
     }
-    // A client is answered when all three are stated; '' is stated (a public
-    // client's secret). The refresh token is a secret: never answered.
-    if (CLIENT_FIELDS.some((field) => client[field] === undefined)) {
-      this.log?.debug(`Destination ${destination}: no complete client`);
+    // The client is its id: answered whenever an id is stated. A field not
+    // stated is answered as '' — not stated — and whoever builds a grant
+    // decides whether it needs it (an OIDC client has an issuer, not a UAA
+    // URL; a public client has no secret). The store judges no grant. The
+    // refresh token is a secret: never answered.
+    if (!client.uaaClientId) {
+      this.log?.debug(`Destination ${destination}: no client id`);
       return null;
     }
     return {
-      uaaUrl: client.uaaUrl as string,
-      uaaClientId: client.uaaClientId as string,
-      uaaClientSecret: client.uaaClientSecret as string,
+      uaaUrl: client.uaaUrl ?? '',
+      uaaClientId: client.uaaClientId,
+      uaaClientSecret: client.uaaClientSecret ?? '',
     };
   }
 

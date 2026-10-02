@@ -445,6 +445,48 @@ describe('EnvDestinationStore', () => {
     });
   });
 
+  describe('the client is the client id (3.2.0)', () => {
+    it('answers a client stated by its id alone, the rest as not stated', async () => {
+      const store = new EnvDestinationStore(dir);
+      // An OIDC public client: the server is the issuer, not a UAA URL.
+      await store.setDestination('OIDC', {
+        authType: 'jwt',
+        grantType: 'device_code',
+        oidcIssuerUrl: 'https://idp.example/realms/test',
+        uaaClientId: 'public-client',
+      });
+
+      expect(await store.getAuthorizationConfig('OIDC')).toEqual({
+        uaaUrl: '',
+        uaaClientId: 'public-client',
+        uaaClientSecret: '',
+      });
+    });
+
+    it('answers no client without a client id, whatever else is stated', async () => {
+      const store = new EnvDestinationStore(dir);
+      await store.setDestination('D', {
+        authType: 'jwt',
+        uaaUrl: 'https://uaa.example',
+        uaaClientSecret: 'secret',
+      });
+
+      expect(await store.getAuthorizationConfig('D')).toBeNull();
+    });
+
+    it('fills what the file leaves out from the fallback, field by field', async () => {
+      const store = new EnvDestinationStore(dir, {
+        fallback: fakeKeyStore(null, CLIENT),
+      });
+      await store.setDestination('D', { uaaClientId: 'file-client' });
+
+      expect(await store.getAuthorizationConfig('D')).toEqual({
+        ...CLIENT,
+        uaaClientId: 'file-client',
+      });
+    });
+  });
+
   it('answers null for a destination it has nothing for', async () => {
     const store = new EnvDestinationStore(dir);
     expect(await store.getConnectionConfig('NONE')).toBeNull();

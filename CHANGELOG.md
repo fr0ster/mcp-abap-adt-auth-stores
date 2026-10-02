@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-10-02
+
+### Changed
+
+- **`EnvDestinationStore` answers a client whenever `uaaClientId` is stated.**
+  It answered one only when `uaaUrl`, `uaaClientId` and `uaaClientSecret` were
+  all stated, deciding for the consumer whether a client was complete enough
+  for a grant. An OIDC client has an issuer (`oidcIssuerUrl`), not a UAA URL,
+  and a public client has no secret: both were answered as no client at all.
+  Now a field not stated is answered as `''` — not stated — and whoever builds
+  the grant decides whether it needs it (`@mcp-abap-adt/auth-broker` 4 counts
+  `''` as missing and names the field). A destination without a client id
+  still answers no client. A 3.x public-client file without the
+  `SAP_UAA_CLIENT_SECRET` line is a public client as it is.
+
 ## [3.1.0] - 2026-10-02
 
 Two additions the auth-broker 4 needs, both optional: a SAP service key store
