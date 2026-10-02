@@ -4,6 +4,10 @@
  * `authorizationToken` or `sessionCookies` — one kind at a time — with the
  * `expiresAt` of that credential, and the `refreshToken`. Everything used to
  * obtain a secret is means and lives in a key store (auth-stores 3.0.0).
+ *
+ * Beside the credential, what it is bound to (3.1.0): `issuedFor`, the
+ * resource it was obtained for, and `issuedBy`, who issued it and to which
+ * client — kept as given, written and cleared with the credential.
  */
 
 import { InvalidConfigError, RefusedFieldsError } from '../errors/StoreErrors';
@@ -14,7 +18,14 @@ export interface SessionSecret {
   /** Epoch milliseconds, as the provider reported it. */
   expiresAt?: number;
   refreshToken?: string;
+  /** The URI of the resource the credential was obtained for, as given. */
+  issuedFor?: string;
+  /** The URI of who issued the credential and to which client, as given. */
+  issuedBy?: string;
 }
+
+/** The fields that bind a credential: kept only while a credential is held. */
+export const BINDING_FIELDS = ['issuedFor', 'issuedBy'] as const;
 
 export type SecretField = keyof SessionSecret;
 
@@ -23,6 +34,7 @@ export const SESSION_SECRET_FIELDS: readonly SecretField[] = [
   'sessionCookies',
   'expiresAt',
   'refreshToken',
+  ...BINDING_FIELDS,
 ];
 
 /** The fields a write carries: those given with a value other than undefined. */
@@ -64,6 +76,7 @@ export function takeSecret(
     'authorizationToken',
     'sessionCookies',
     'refreshToken',
+    ...BINDING_FIELDS,
   ] as const) {
     const value = obj[field];
     if (value === undefined) continue;
@@ -103,6 +116,11 @@ export function takeSecret(
  * - A write of both kinds at once is refused: a session holds one.
  * - `expiresAt` alone updates the expiry of the credential held.
  * - `refreshToken` given is kept, `''` clears it, absent leaves it.
+ * - `issuedFor` and `issuedBy` (3.1.0) go with the credential: a credential
+ *   written (a token or cookies) takes those its write gives, and one the
+ *   write leaves out — absent or `''` — is cleared. With no credential written,
+ *   each given is set, `''` clears it, absent leaves it. With no credential
+ *   held after the write, neither is kept.
  */
 export function applySecret(
   current: SessionSecret,
@@ -150,6 +168,14 @@ export function applySecret(
   if (write.refreshToken !== undefined) {
     if (write.refreshToken) next.refreshToken = write.refreshToken;
     else delete next.refreshToken;
+  }
+  const newCredential = !!(write.authorizationToken || write.sessionCookies);
+  for (const field of BINDING_FIELDS) {
+    if (newCredential || write[field] !== undefined) {
+      if (write[field]) next[field] = write[field];
+      else delete next[field];
+    }
+    if (!next.authorizationToken && !next.sessionCookies) delete next[field];
   }
   return next;
 }

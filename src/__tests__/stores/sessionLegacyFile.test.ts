@@ -2,10 +2,12 @@
  * 2.x session files keep being read, and stay 2.x files (3.0.0).
  *
  * A 2.x `<destination>.env` holds means and secret together. The session store
- * answers only the secret keys of such a file, and a session write rewrites
- * only those keys: every other line — the URL, the type, the client, the SNC
- * settings, a comment, a key this package does not know — is left byte for
- * byte, so the destination store can still read the means from the same file.
+ * answers only the secret keys of such a file — and, from 3.1.0, the binding
+ * its URL and client compose (`sessionBinding.test.ts`) — and a session write
+ * rewrites only the secret and binding keys: every other line — the URL, the
+ * type, the client, the SNC settings, a comment, a key this package does not
+ * know — is left byte for byte, so the destination store can still read the
+ * means from the same file.
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -60,11 +62,15 @@ const ABAP_SECRET = new Set([
   'SAP_SESSION_COOKIES_B64',
   'SAP_REFRESH_TOKEN',
   'SAP_EXPIRES_AT',
+  'SAP_ISSUED_FOR',
+  'SAP_ISSUED_BY',
 ]);
 const XSUAA_SECRET = new Set([
   'XSUAA_JWT_TOKEN',
   'XSUAA_REFRESH_TOKEN',
   'XSUAA_EXPIRES_AT',
+  'XSUAA_ISSUED_FOR',
+  'XSUAA_ISSUED_BY',
 ]);
 
 const keyOf = (line: string) => /^\s*([\w.-]+)\s*=/.exec(line)?.[1];
@@ -85,6 +91,8 @@ describe.each([
       sessionCookies: COOKIES,
       refreshToken: 'old-refresh',
       expiresAt: 1_800_000_000_000,
+      issuedFor: 'https://legacy.example?sap-client=100',
+      issuedBy: 'https://uaa.example?client_id=client',
     },
   },
   {
@@ -98,6 +106,8 @@ describe.each([
       sessionCookies: COOKIES,
       refreshToken: 'old-refresh',
       expiresAt: 1_800_000_000_000,
+      issuedFor: 'https://legacy.example?sap-client=100',
+      issuedBy: 'https://uaa.example?client_id=client',
     },
   },
   {
@@ -109,6 +119,8 @@ describe.each([
       authorizationToken: 'old-token',
       refreshToken: 'old-refresh',
       expiresAt: 1_800_000_000_000,
+      issuedFor: 'https://mcp.example',
+      issuedBy: 'https://uaa.example?client_id=client',
     },
   },
 ])('$name — a 2.x file with every key', ({ make, fixture, secret, stored }) => {
@@ -123,7 +135,7 @@ describe.each([
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('answers only the secret keys', async () => {
+  it('answers only the secret keys, and the binding they compose', async () => {
     const store = make(dir);
     expect(await store.loadSession('D')).toEqual(stored);
     const { refreshToken: _r, ...connection } = stored;

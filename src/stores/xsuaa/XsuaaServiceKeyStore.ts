@@ -10,6 +10,10 @@ import type {
 import type { IAuthorizationConfig } from '@mcp-abap-adt/interfaces-auth-sap';
 import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
 import { JsonFileHandler } from '../../utils/JsonFileHandler';
+import {
+  readServiceKeyStoreOptions,
+  type ServiceKeyStoreOptions,
+} from '../keyStoreOptions';
 
 /**
  * XSUAA Service key store implementation
@@ -22,15 +26,24 @@ import { JsonFileHandler } from '../../utils/JsonFileHandler';
 export class XsuaaServiceKeyStore implements IServiceKeyStore {
   private directory: string;
   private log?: ILogger;
+  private grantType?: ServiceKeyStoreOptions['grantType'];
 
   /**
    * Create a new XsuaaServiceKeyStore instance
    * @param directory Directory where service key .json files are located
-   * @param log Optional logger for logging operations
+   * @param options `{ grantType?, log? }` — the grant a key cannot state, and
+   *   a logger; or, as in 3.0.0, the logger itself. The resource URL is not an
+   *   option: it is means, stated in an `EnvDestinationStore` with this store
+   *   as its fallback.
    */
-  constructor(directory: string, log?: ILogger) {
+  constructor(directory: string, options?: ServiceKeyStoreOptions | ILogger) {
+    const { grantType, log } = readServiceKeyStoreOptions(
+      'XsuaaServiceKeyStore',
+      options,
+    );
     this.directory = directory;
     this.log = log;
+    this.grantType = grantType;
   }
 
   /**
@@ -161,9 +174,10 @@ export class XsuaaServiceKeyStore implements IServiceKeyStore {
     );
 
     // A key holds an OAuth client and nothing else: a token destination.
-    // Which grant it uses the key cannot state, so none is answered; and a
-    // token is secret — a key store answers none.
-    return {
+    // Which grant it uses the key cannot state: the grant is answered only
+    // when whoever built the store stated it. A token is secret — a key store
+    // answers none.
+    const result: IConnectionConfig = {
       serviceUrl,
       authType: 'jwt',
       sapClient: (abap?.client || data.sap_client || data.client) as
@@ -171,5 +185,7 @@ export class XsuaaServiceKeyStore implements IServiceKeyStore {
         | undefined,
       language: (abap?.language || data.language) as string | undefined,
     };
+    if (this.grantType) result.grantType = this.grantType;
+    return result;
   }
 }

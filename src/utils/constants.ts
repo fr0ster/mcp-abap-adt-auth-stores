@@ -118,6 +118,10 @@ export const ABAP_SESSION_VARS = {
   EXPIRES_AT: 'SAP_EXPIRES_AT',
   /** Refresh token */
   REFRESH_TOKEN: 'SAP_REFRESH_TOKEN',
+  /** The URI of the resource the credential was obtained for (3.1.0) */
+  ISSUED_FOR: 'SAP_ISSUED_FOR',
+  /** The URI of who issued the credential, to which client (3.1.0) */
+  ISSUED_BY: 'SAP_ISSUED_BY',
 } as const;
 
 /**
@@ -131,4 +135,8 @@ export const XSUAA_SESSION_VARS = {
   EXPIRES_AT: 'XSUAA_EXPIRES_AT',
   /** Refresh token */
   REFRESH_TOKEN: 'XSUAA_REFRESH_TOKEN',
+  /** The URI of the resource the credential was obtained for (3.1.0) */
+  ISSUED_FOR: 'XSUAA_ISSUED_FOR',
+  /** The URI of who issued the credential, to which client (3.1.0) */
+  ISSUED_BY: 'XSUAA_ISSUED_BY',
 } as const;

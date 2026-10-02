@@ -22,11 +22,20 @@ import type { SessionSecret } from '../../session/sessionSecret';
 import { assertDestinationName } from '../../storage/destinationName';
 import { withFileLock } from '../../storage/fileLock';
 import { XSUAA_SESSION_VARS } from '../../utils/constants';
+import { XSUAA_DESTINATION_VARS } from '../destination/EnvDestinationStore';
 
 const KEYS: SecretKeys = {
   authorizationToken: XSUAA_SESSION_VARS.AUTHORIZATION_TOKEN,
   expiresAt: XSUAA_SESSION_VARS.EXPIRES_AT,
   refreshToken: XSUAA_SESSION_VARS.REFRESH_TOKEN,
+  issuedFor: XSUAA_SESSION_VARS.ISSUED_FOR,
+  issuedBy: XSUAA_SESSION_VARS.ISSUED_BY,
+  legacy: {
+    serviceUrl: XSUAA_DESTINATION_VARS.serviceUrl,
+    sapClient: XSUAA_DESTINATION_VARS.sapClient,
+    uaaUrl: XSUAA_DESTINATION_VARS.uaaUrl,
+    uaaClientId: XSUAA_DESTINATION_VARS.uaaClientId,
+  },
 };
 
 /**

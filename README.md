@@ -18,7 +18,7 @@ This package implements the `IServiceKeyStore` and `ISessionStore` contracts fro
 | Store | Holds | Implementations here |
 |---|---|---|
 | `IServiceKeyStore` — the **means**: what is used to obtain a session secret | the client (`uaaUrl`, `uaaClientId`, `uaaClientSecret`); `authType`, `grantType`; basic's `username` / `password`; the `snc*`, `oidc*` and `saml*` settings; `serviceUrl`, `sapClient`, `language` | `AbapServiceKeyStore`, `XsuaaServiceKeyStore` (SAP service key JSON), `EnvDestinationStore` (`<dir>/<destination>.env`) |
-| `ISessionStore` — the **secret** that authorizes within a session | `authorizationToken` or `sessionCookies`, their `expiresAt`, `refreshToken` | `AbapSessionStore`, `XsuaaSessionStore`, `EnvFileSessionStore` (files), `SafeAbapSessionStore`, `SafeXsuaaSessionStore` (memory) |
+| `ISessionStore` — the **secret** that authorizes within a session | `authorizationToken` or `sessionCookies`, their `expiresAt`, `refreshToken` — and what the credential is bound to, `issuedFor` and `issuedBy` (3.1.0) | `AbapSessionStore`, `XsuaaSessionStore`, `EnvFileSessionStore` (files), `SafeAbapSessionStore`, `SafeXsuaaSessionStore` (memory) |
 
 A key store never answers a secret, and a session store refuses to hold means. `basic` and `snc` destinations obtain no session secret: their session holds nothing.
 
@@ -69,7 +69,7 @@ This package is responsible for:
 
 This package interacts with external packages **ONLY through interfaces**:
 
-- **`@mcp-abap-adt/interfaces-auth-broker`** (`^1.0.0`): `IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `DestinationGrant` — the broker's port: the destination and the stores that hold it. 1.0.0 carries `grantType`, `expiresAt` and the `oidc*` / `saml*` fields
+- **`@mcp-abap-adt/interfaces-auth-broker`** (`^1.1.0`): `IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `DestinationGrant` — the broker's port: the destination and the stores that hold it. 1.0.0 carries `grantType`, `expiresAt` and the `oidc*` / `saml*` fields; 1.1.0 adds `issuedFor` / `issuedBy`
 - **`@mcp-abap-adt/interfaces-auth-sap`** (`^2.0.0`): `IAuthorizationConfig` — the UAA client
 - **`@mcp-abap-adt/interfaces-auth`** (`^3.0.0`): `STORE_ERROR_CODES` and `StoreErrorCode` — the failure vocabulary, which means the same off SAP
 - **`@mcp-abap-adt/interfaces-utils`** (`^1.1.0`): `ILogger`
@@ -85,13 +85,24 @@ This package interacts with external packages **ONLY through interfaces**:
 - **`XsuaaServiceKeyStore`** (alias **`BtpServiceKeyStore`**) — reads XSUAA service keys (direct format, or `cf service-key` output with a `credentials` wrapper)
 - **`EnvDestinationStore`** — a destination's means in `<directory>/<destination>.env`, with a write method of its own; optionally falls back to another key store field by field
 
-A SAP service key holds an OAuth client and nothing else, so both service key stores answer `authType: 'jwt'` from `getConnectionConfig`. They answer **no `grantType`**: a service key cannot state which grant a destination uses (the grants a client may use are declared on the XSUAA instance, and a client permitted several serves all of them). State the grant in an `EnvDestinationStore` — on its own, or with the service key store as its fallback. They answer **no token** either (2.x answered `authorizationToken: ''`).
+A SAP service key holds an OAuth client and nothing else, so both service key stores answer `authType: 'jwt'` from `getConnectionConfig`. A service key cannot state which grant a destination uses (the grants a client may use are declared on the XSUAA instance, and a client permitted several serves all of them), so the grant comes from whoever builds the store (3.1.0):
+
+```typescript
+new AbapServiceKeyStore(dir, { grantType: 'authorization_code', log });
+new XsuaaServiceKeyStore(dir, { grantType: 'client_credentials' });
+new AbapServiceKeyStore(dir, log); // the 3.0.0 form: no grant answered
+```
+
+- **`grantType`** given is answered by `getConnectionConfig` and `getServiceKey` for every destination that has a key; without it **no `grantType`** is answered, as in 3.0.0. Nothing is inferred. Alternatively, state the grant in an `EnvDestinationStore` — on its own, or with the service key store as its fallback.
+- **The second argument** is `{ grantType?, log? }` or, as in 3.0.0, the logger itself (an object with a logger's `debug` / `info` / `warn` / `error` — `console` included). Anything else is a `TypeError` at construction, naming what was wrong and never a value: a string or another non-object, an option it does not take, a grant it does not know.
+- **No `serviceUrl` option.** The resource URL is means of the destination, not of the key: state it in an `EnvDestinationStore` (`setDestination(name, { serviceUrl })`, `XSUAA_MCP_URL` with `XSUAA_DESTINATION_VARS`) with the key store as its fallback. An XSUAA key's own `url` is still read as before (a `url` without `authentication` in it).
+- They answer **no token** (2.x answered `authorizationToken: ''`) and never `issuedFor` / `issuedBy`.
 
 ### Session stores — the secret
 
 **File-based** (`.env` files):
-- **`AbapSessionStore`** (alias **`SamlSessionStore`**) — `SAP_JWT_TOKEN` or `SAP_SESSION_COOKIES_B64`, `SAP_EXPIRES_AT`, `SAP_REFRESH_TOKEN`
-- **`XsuaaSessionStore`** (alias **`BtpSessionStore`**) — `XSUAA_JWT_TOKEN`, `XSUAA_EXPIRES_AT`, `XSUAA_REFRESH_TOKEN`
+- **`AbapSessionStore`** (alias **`SamlSessionStore`**) — `SAP_JWT_TOKEN` or `SAP_SESSION_COOKIES_B64`, `SAP_EXPIRES_AT`, `SAP_REFRESH_TOKEN`, `SAP_ISSUED_FOR`, `SAP_ISSUED_BY`
+- **`XsuaaSessionStore`** (alias **`BtpSessionStore`**) — `XSUAA_JWT_TOKEN`, `XSUAA_EXPIRES_AT`, `XSUAA_REFRESH_TOKEN`, `XSUAA_ISSUED_FOR`, `XSUAA_ISSUED_BY`
 - **`EnvFileSessionStore`** — the `SAP_*` secret keys of one given file (`--env /path/to/.env`), whatever the destination
 
 **In-memory** (non-persistent):
@@ -100,14 +111,45 @@ A SAP service key holds an OAuth client and nothing else, so both service key st
 
 Every session store follows the same rules:
 
-- **The secret alone.** `saveSession` and `setConnectionConfig` take `authorizationToken`, `sessionCookies`, `expiresAt` (epoch ms) and `refreshToken`. A write carrying **any other field** — `serviceUrl`, `authType`, `grantType`, `username`, `password`, the `snc*`, `oidc*` and `saml*` fields, `sapClient`, `language`, `uaaUrl` / `uaaClientId` / `uaaClientSecret`, or a field no store knows — is refused with a `RefusedFieldsError` (code `INVALID_CONFIG`) whose message and `fields` name the fields, never a value. A field given as `undefined` is not carried.
+- **The secret alone.** `saveSession` and `setConnectionConfig` take `authorizationToken`, `sessionCookies`, `expiresAt` (epoch ms), `refreshToken`, and what the credential is bound to, `issuedFor` and `issuedBy` (see *The binding*). A write carrying **any other field** — `serviceUrl`, `authType`, `grantType`, `username`, `password`, the `snc*`, `oidc*` and `saml*` fields, `sapClient`, `language`, `uaaUrl` / `uaaClientId` / `uaaClientSecret`, or a field no store knows — is refused with a `RefusedFieldsError` (code `INVALID_CONFIG`) whose message and `fields` name the fields, never a value. A field given as `undefined` is not carried.
 - **No serviceUrl.** A session needs none, and none is answered.
 - **No client.** `setAuthorizationConfig` always refuses (`IAuthorizationConfig` is the client, which is means); `getAuthorizationConfig` answers `null`. A refresh token is written through `saveSession`, and answered by `loadSession`.
 - **One secret kind at a time.** Writing a token clears stored cookies, and writing cookies clears the token. `expiresAt` is written and cleared with its credential: a new credential written without `expiresAt` does not keep the old one's. A credential given as `''` clears it, with its `expiresAt`; clearing the kind not held (`authorizationToken: ''` while cookies are stored) changes nothing. `expiresAt` must be a non-negative whole number of epoch milliseconds — what the file stores read back — anything else is refused. The refresh token is kept until a write gives another (`''` clears it).
 - **The XSUAA stores hold a token.** They refuse cookies, and a write that would leave the session without a token.
-- **What is answered.** `loadSession`: the four secret fields present, or `null` when there are none. `getConnectionConfig`: the token or cookies and `expiresAt`, or `null`.
+- **What is answered.** `loadSession`: the secret fields present — with `issuedFor` / `issuedBy` while a credential is held — or `null` when there are none. `getConnectionConfig`: the same without the refresh token, or `null`.
 - **A file store touches only its own keys.** A write sets or removes the secret keys and leaves every other line of the file — keys, comments, blank lines — byte for byte. `deleteSession` removes the secret keys, and the file only when no key is left.
+- **The binding** — see below.
 - Constructors: `AbapSessionStore(directory, log?)`, `XsuaaSessionStore(directory, log?)`, `EnvFileSessionStore(envFilePath, log?)`, `SafeAbapSessionStore(log?)`, `SafeXsuaaSessionStore(log?)`. File stores create their directory if it is missing. A string where the logger goes — 2.x's `defaultServiceUrl`, passed by a JavaScript caller — throws a `TypeError` at construction saying so.
+
+### The binding: `issuedFor` and `issuedBy` (3.1.0)
+
+A session store keeps, beside the credential, two strings (`IConnectionConfig`, `@mcp-abap-adt/interfaces-auth-broker` 1.1.0): `issuedFor`, the URI of the resource the credential was obtained for, and `issuedBy`, the URI of who issued it and to which client. The broker (`@mcp-abap-adt/auth-broker` 4) writes both with every secret and uses a stored secret only when both equal what the destination's means give — so a secret is never presented to another resource, and one from another issuer or client is never used in place of this one. The store keeps the strings **as given**: it neither canonicalises nor judges them; the broker canonicalises both sides before it compares.
+
+They follow the credential, extending the rules above:
+
+- **A credential written** (a token or cookies, including one replacing the other kind) takes the `issuedFor` / `issuedBy` its write gives; one the write leaves out — absent or `''` — is cleared. A new credential never inherits the old one's binding.
+- **No credential written** (only `expiresAt`, `refreshToken`, or the binding itself): a binding field given sets it, `''` clears it, absent (`undefined`) keeps it.
+- **No credential held** after the write (none written yet, or `''` cleared it, or `deleteSession`): neither is kept, and neither is answered.
+- A value that is not a string is refused with an `InvalidConfigError` naming the field.
+- File keys: `SAP_ISSUED_FOR` / `SAP_ISSUED_BY` (`AbapSessionStore`, `EnvFileSessionStore`), `XSUAA_ISSUED_FOR` / `XSUAA_ISSUED_BY` (`XsuaaSessionStore`); fields in the in-memory stores. A file store writes **both keys with every credential, empty when there is none**, and removes them with the credential.
+- Key stores never answer them, and `EnvDestinationStore.setDestination` refuses them like any secret field.
+
+**A custom `ISessionStore`** (a database, a message log, a secret store) must persist both fields beside the secret. One that drops them still type-checks, but the broker then never uses its sessions — every process start logs in afresh, a browser each time for an interactive grant.
+
+#### Files written before 3.1.0
+
+A file written by auth-stores 2.x or 3.0.0 (or auth-broker 3.x) has no binding key. While it holds a credential, the session store answers the binding its writers left beside the token — the 3.x broker wrote the URL with the token, and the 3.x CLI and broker the client — **composed, not canonicalised**:
+
+| Field | Composed from (ABAP / `EnvFileSessionStore`) | XSUAA store | When |
+|---|---|---|---|
+| `issuedFor` | `SAP_URL`, with `sap-client=<SAP_CLIENT>` when `SAP_CLIENT` is stated | `XSUAA_MCP_URL` (+ `XSUAA_CLIENT`) | the file holds a token or cookies and the URL key |
+| `issuedBy` | `SAP_UAA_URL` with `client_id=<SAP_UAA_CLIENT_ID>` | `XSUAA_UAA_URL` + `XSUAA_UAA_CLIENT_ID` | the file holds a **token** and both keys; a cookie session never had an ACS stored, so it has none |
+
+The parameter is appended with `?`, or `&` when the URL already has a query; its value is percent-encoded. Case, port, path and trailing `/` stay as written. These are exactly the destination store's means keys (`ABAP_DESTINATION_VARS` / `XSUAA_DESTINATION_VARS`). A file without them answers no binding, and the broker logs in once afresh.
+
+Each binding key stands alone: present — **empty included** — it is what a 3.1.0 writer stated, and its legacy source is no longer read. Since a file store writes both keys with every credential, the **first credential written by 3.1.0 ends the legacy reading** of that file; a write that keeps the credential (a new refresh token, an expiry) writes the binding it answered at that moment, which then no longer follows the means keys.
+
+**A shared file** — `EnvDestinationStore` and a session store on one `<destination>.env` — holds `SAP_URL` / `SAP_UAA_*` as **means**. A session written by 3.1.0 carries its own binding keys, so later changes of those means do not move it (whichever store wrote first). A session written before 3.1.0 is read as above: its binding is composed from the **current** means keys. **Remaining risk:** if those keys were edited (by hand, or by `setDestination`) before the first 3.1.0 write — or a 3.0.0 store rewrote the token after the means had moved — the session answers a binding nobody checked, and the broker may present that secret to the edited URL. The first 3.1.0 write of the session ends it.
 
 ## Usage
 
@@ -251,6 +293,8 @@ SAP_JWT_TOKEN=<access token>              # or:
 SAP_SESSION_COOKIES_B64=<base64 of the Cookie header value>
 SAP_EXPIRES_AT=1790000000000              # epoch ms
 SAP_REFRESH_TOKEN=<refresh token>
+SAP_ISSUED_FOR=<URI of the resource>      # 3.1.0: written with every credential,
+SAP_ISSUED_BY=<URI of issuer and client>  # empty when there is none
 ```
 
 `XSUAA_DESTINATION_VARS` and `XSUAA_SESSION_VARS` are the same with `XSUAA_`, the URL under `XSUAA_MCP_URL`. Values with spaces or special characters are written in the first quote character they do not contain — `'`, then `` ` ``, then `"` — so dotenv reads them back unchanged. Two values cannot be written, and are refused with a `StorageError` naming the key: one with a line break (certificates are base64-encoded for that reason), and one containing `'`, `` ` `` and `"` together (no dotenv quoting reads it back).
@@ -263,10 +307,10 @@ A file written by auth-stores 2.x (or auth-broker 3.x) holds means and secret to
 
 | 2.x key (ABAP; the XSUAA stores' `XSUAA_*` keys alike) | Role in 3.0.0 | Read by |
 |---|---|---|
-| `SAP_JWT_TOKEN`, `SAP_SESSION_COOKIES_B64`, `SAP_REFRESH_TOKEN` (and the new `SAP_EXPIRES_AT`) | secret | the session store |
+| `SAP_JWT_TOKEN`, `SAP_SESSION_COOKIES_B64`, `SAP_REFRESH_TOKEN` (and the new `SAP_EXPIRES_AT`, and 3.1.0's `SAP_ISSUED_FOR` / `SAP_ISSUED_BY`) | secret | the session store |
 | `SAP_URL`, `SAP_AUTH_TYPE`, `SAP_USERNAME`, `SAP_PASSWORD`, `SAP_SNC_*`, `SAP_UAA_URL`, `SAP_UAA_CLIENT_ID`, `SAP_UAA_CLIENT_SECRET`, `SAP_CLIENT`, `SAP_LANGUAGE` | means | `EnvDestinationStore`, pointed at the same directory |
 
-A session write rewrites only the secret keys, so a 2.x file stays a complete 2.x file. A 2.x `basic` or `snc` file is a complete destination as it is. A 2.x `jwt` or `saml` file states no grant — 2.x never wrote one — so add `SAP_GRANT_TYPE` (by hand, or through `setDestination`). A 3.x public-client file (`mcp-sso` stripped its `__public__` secret line) has no `SAP_UAA_CLIENT_SECRET`, so no client is answered for it: add the empty line `SAP_UAA_CLIENT_SECRET=`, or run the 4.0 CLI command again. A file without `SAP_AUTH_TYPE` read with a service key fallback takes the key's `jwt` — see *Infers nothing* above.
+A session write rewrites only the secret keys, so a 2.x file stays a complete 2.x file. From 3.1.0 the session store also answers the binding the URL and client keys compose (see *Files written before 3.1.0*). A 2.x `basic` or `snc` file is a complete destination as it is. A 2.x `jwt` or `saml` file states no grant — 2.x never wrote one — so add `SAP_GRANT_TYPE` (by hand, or through `setDestination`). A 3.x public-client file (`mcp-sso` stripped its `__public__` secret line) has no `SAP_UAA_CLIENT_SECRET`, so no client is answered for it: add the empty line `SAP_UAA_CLIENT_SECRET=`, or run the 4.0 CLI command again. A file without `SAP_AUTH_TYPE` read with a service key fallback takes the key's `jwt` — see *Infers nothing* above.
 
 ### BTP / XSUAA stores
 
@@ -279,8 +323,10 @@ import {
   XSUAA_DESTINATION_VARS,
 } from '@mcp-abap-adt/auth-stores';
 
-const serviceKeyStore = new XsuaaServiceKeyStore('/path/to/service-keys');
-// the MCP URL and the grant are means: state them in a destination store
+const serviceKeyStore = new XsuaaServiceKeyStore('/path/to/service-keys', {
+  grantType: 'client_credentials', // what the key cannot state (3.1.0)
+});
+// the MCP URL is means: state it in a destination store
 const keyStore = new EnvDestinationStore('/path/to/sessions', {
   variables: XSUAA_DESTINATION_VARS,
   fallback: serviceKeyStore,
@@ -429,8 +475,8 @@ await EnvFileHandler.save('/path/to/file.env', {
 import {
   ABAP_DESTINATION_VARS, // means keys of EnvDestinationStore (SAP_*)
   XSUAA_DESTINATION_VARS, // the same, XSUAA_*
-  ABAP_SESSION_VARS, // secret keys of AbapSessionStore / EnvFileSessionStore
-  XSUAA_SESSION_VARS, // secret keys of XsuaaSessionStore
+  ABAP_SESSION_VARS, // secret and binding keys of AbapSessionStore / EnvFileSessionStore
+  XSUAA_SESSION_VARS, // secret and binding keys of XsuaaSessionStore
   // the 2.x tables, unchanged:
   ABAP_AUTHORIZATION_VARS,
   ABAP_CONNECTION_VARS,
@@ -588,11 +634,11 @@ Integration tests return at once, with a warning, if `test-config.yaml` is not c
 - Every directory is a constructor parameter; no store searches other locations
 - File-based session stores create their directory in the constructor if it is missing
 - In-memory stores (`Safe*SessionStore`) do not persist anything to disk
-- Nothing a store holds reaches a log line or an error message: tokens are logged as `<redacted, N chars>`, means by field name only
+- Nothing a store holds reaches a log line or an error message: tokens are logged as `<redacted, N chars>`, means by field name only, `issuedFor` / `issuedBy` by name only
 
 ## Dependencies
 
-- `@mcp-abap-adt/interfaces-auth-broker` (^1.0.0) - the store contracts (`IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `DestinationGrant`)
+- `@mcp-abap-adt/interfaces-auth-broker` (^1.1.0) - the store contracts (`IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `DestinationGrant`)
 - `@mcp-abap-adt/interfaces-auth-sap` (^2.0.0) - `IAuthorizationConfig`
 - `@mcp-abap-adt/interfaces-auth` (^3.0.0) - `STORE_ERROR_CODES`
 - `@mcp-abap-adt/interfaces-utils` (^1.1.0) - `ILogger`

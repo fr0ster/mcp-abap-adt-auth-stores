@@ -34,7 +34,7 @@ describe('AbapSessionStore Integration', () => {
   const sessionsDir = getSessionsDir(config);
   const hasReal = hasRealConfig(config, 'abap');
 
-  it('loads the configured session from its real .env file: the secret alone', async () => {
+  it('loads the configured session from its real .env file: the secret alone, and its binding', async () => {
     if (!hasReal || !destination || !sessionsDir) {
       console.warn('⚠️  Skipping ABAP session load test - no real config');
       return;
@@ -48,6 +48,9 @@ describe('AbapSessionStore Integration', () => {
           'sessionCookies',
           'expiresAt',
           'refreshToken',
+          // what the credential is bound to (3.1.0), legacy-composed included
+          'issuedFor',
+          'issuedBy',
         ]).toContain(key);
       }
     }
