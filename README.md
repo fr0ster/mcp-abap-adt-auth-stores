@@ -226,7 +226,7 @@ await sessionStore.saveSession('TRIAL', {
 
 `EnvDestinationStore.forFile(path, { fallback?, variables?, log? })` — one given file, whatever its name (`.env.dev`, `conn.cfg`): every destination name resolves to that file and is not used to find it, as with `EnvFileSessionStore`. The fallback is still asked by the destination name.
 
-- **Reads** every means field of `IConnectionConfig` (`getConnectionConfig`) and the client (`getAuthorizationConfig`: answered when `uaaUrl`, `uaaClientId` and `uaaClientSecret` are all stated; `''` is stated). `getServiceKey` answers both together.
+- **Reads** every means field of `IConnectionConfig` (`getConnectionConfig`) and the client (`getAuthorizationConfig`: answered whenever `uaaClientId` is stated and not empty — `''` is no id, so no client; `uaaUrl` or `uaaClientSecret` not stated is answered as `''`, so an OIDC client — an issuer, no UAA URL — or a public client — no secret — is a client too. Whether a grant needs those fields is the broker's to decide, not the store's). `getServiceKey` answers both together.
 - **Answers means only**: no token, cookies, expiry or refresh token, from the file or the fallback.
 - **Infers nothing**: a file without `SAP_AUTH_TYPE` states no type; a type or grant it does not know is answered as stored, for the consumer to name. With a fallback, the missing type comes from the fallback: a 1.x/2.x `basic` file without `SAP_AUTH_TYPE` beside a SAP service key reads as `authType: 'jwt'` (the key's) **with** the file's `username` / `password` — state `SAP_AUTH_TYPE=basic` in such a file, or `SAP_AUTH_TYPE=jwt` and `SAP_GRANT_TYPE` for a token destination.
 - **Fallback**: another `IServiceKeyStore` fills, field by field, what the file leaves out. A field the file states — `''` included — wins.
@@ -257,7 +257,8 @@ SAP_SNC_QOP=9
 SAP_SNC_LIB=/usr/sap/sapcrypto/libsapcrypto.so
 SAP_SNC_MYNAME=p:CN=ME
 
-# the client (an empty secret is a public client)
+# the client: its id is what makes one; a missing URL or secret is answered
+# as '' (an OIDC client has an issuer instead; a public client has no secret)
 SAP_UAA_URL=https://uaa.example.com
 SAP_UAA_CLIENT_ID=client-id
 SAP_UAA_CLIENT_SECRET=client-secret
@@ -310,7 +311,7 @@ A file written by auth-stores 2.x (or auth-broker 3.x) holds means and secret to
 | `SAP_JWT_TOKEN`, `SAP_SESSION_COOKIES_B64`, `SAP_REFRESH_TOKEN` (and the new `SAP_EXPIRES_AT`, and 3.1.0's `SAP_ISSUED_FOR` / `SAP_ISSUED_BY`) | secret | the session store |
 | `SAP_URL`, `SAP_AUTH_TYPE`, `SAP_USERNAME`, `SAP_PASSWORD`, `SAP_SNC_*`, `SAP_UAA_URL`, `SAP_UAA_CLIENT_ID`, `SAP_UAA_CLIENT_SECRET`, `SAP_CLIENT`, `SAP_LANGUAGE` | means | `EnvDestinationStore`, pointed at the same directory |
 
-A session write rewrites only the secret keys, so a 2.x file stays a complete 2.x file. From 3.1.0 the session store also answers the binding the URL and client keys compose (see *Files written before 3.1.0*). A 2.x `basic` or `snc` file is a complete destination as it is. A 2.x `jwt` or `saml` file states no grant — 2.x never wrote one — so add `SAP_GRANT_TYPE` (by hand, or through `setDestination`). A 3.x public-client file (`mcp-sso` stripped its `__public__` secret line) has no `SAP_UAA_CLIENT_SECRET`, so no client is answered for it: add the empty line `SAP_UAA_CLIENT_SECRET=`, or run the 4.0 CLI command again. A file without `SAP_AUTH_TYPE` read with a service key fallback takes the key's `jwt` — see *Infers nothing* above.
+A session write rewrites only the secret keys, so a 2.x file stays a complete 2.x file. From 3.1.0 the session store also answers the binding the URL and client keys compose (see *Files written before 3.1.0*). A 2.x `basic` or `snc` file is a complete destination as it is. A 2.x `jwt` or `saml` file states no grant — 2.x never wrote one — so add `SAP_GRANT_TYPE` (by hand, or through `setDestination`). A 3.x public-client file (`mcp-sso` stripped its `__public__` secret line) has no `SAP_UAA_CLIENT_SECRET`; from 3.2.0 its client is answered with the secret `''`, a public client, as it is. A file without `SAP_AUTH_TYPE` read with a service key fallback takes the key's `jwt` — see *Infers nothing* above.
 
 ### BTP / XSUAA stores
 
