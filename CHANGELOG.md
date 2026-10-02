@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-02
+
+Two additions the auth-broker 4 needs, both optional: a SAP service key store
+answers the grant whoever builds it states, and a session store keeps what its
+credential is bound to.
+
+### Added
+
+- **`AbapServiceKeyStore(dir, { grantType?, log? })` and
+  `XsuaaServiceKeyStore(dir, { grantType?, log? })`.** A SAP service key cannot
+  state which grant a destination uses; whoever builds the store states it, and
+  `getConnectionConfig` / `getServiceKey` answer it for every destination with
+  a key. Without the option no grant is answered, as in 3.0.0 — nothing is
+  inferred. The 3.0.0 form `(dir, log)` keeps working: an object with a
+  logger's methods (`console` included) is the logger. A string or other
+  non-object, an option the store does not take, or a grant it does not know
+  is a `TypeError` at construction, naming what was wrong and never a value.
+  There is **no `serviceUrl` option**: the resource URL is means of the
+  destination, stated in an `EnvDestinationStore` with the key store as its
+  fallback (an XSUAA key's own `url` is read as before).
+  `ServiceKeyStoreOptions` is exported.
+- **The session stores keep `issuedFor` and `issuedBy`** (`IConnectionConfig`,
+  `@mcp-abap-adt/interfaces-auth-broker` 1.1.0) — the URI of the resource the
+  credential was obtained for, and of who issued it to which client — beside
+  the credential, as given (neither canonicalised nor judged):
+  `AbapSessionStore` and `EnvFileSessionStore` under `SAP_ISSUED_FOR` /
+  `SAP_ISSUED_BY`, `XsuaaSessionStore` under `XSUAA_ISSUED_FOR` /
+  `XSUAA_ISSUED_BY` (`ABAP_SESSION_VARS.ISSUED_FOR` / `ISSUED_BY`, likewise
+  `XSUAA_SESSION_VARS`), `SafeAbapSessionStore` and `SafeXsuaaSessionStore` as
+  fields. `saveSession` and `setConnectionConfig` accept them; `loadSession`
+  and `getConnectionConfig` answer them while a credential is held. They follow
+  the credential: a credential written takes the binding its write gives, and
+  one left out (absent or `''`) is cleared; with no credential written, a field
+  given sets it, `''` clears it, absent keeps it; with no credential held,
+  neither is kept. A non-string is an `InvalidConfigError` naming the field.
+  Key stores never answer them; `EnvDestinationStore.setDestination` refuses
+  them like any secret field.
+- **Files written before 3.1.0** (no binding key) answer, while they hold a
+  credential, the binding their writers left beside it — composed, not
+  canonicalised: `issuedFor` from `SAP_URL`, with `sap-client=<SAP_CLIENT>`
+  when a client is stated; `issuedBy`, for a token only, from `SAP_UAA_URL`
+  with `client_id=<SAP_UAA_CLIENT_ID>` when both are stated (the XSUAA store:
+  `XSUAA_MCP_URL` + `XSUAA_CLIENT`, `XSUAA_UAA_URL` + `XSUAA_UAA_CLIENT_ID`).
+  The parameter is appended with `?`, or `&` after an existing query, its value
+  percent-encoded. A binding key present in the file — empty included — is
+  read instead of its legacy source.
+
+### Changed
+
+- **A file store writes `*_ISSUED_FOR` and `*_ISSUED_BY` with every
+  credential, empty when the write gives none**, and removes them with the
+  credential. A session file written by 3.1.0 therefore has two more lines,
+  and its binding no longer follows the means keys of a shared file. Through
+  the API nothing else changes for a caller that passes neither the options
+  nor the fields — except that `loadSession` / `getConnectionConfig` of a file
+  written before 3.1.0 now also answer the binding composed above, and the
+  refusal of a means write lists the two fields among those a session holds.
+- `@mcp-abap-adt/interfaces-auth-broker` `^1.1.0`.
+
+### Remaining risk
+
+A session written before 3.1.0 into a file shared with `EnvDestinationStore`
+answers a binding composed from the **current** `SAP_URL` / `SAP_UAA_*`. If
+those were edited — by hand or through `setDestination` — before the first
+3.1.0 write of the session, or a 3.0.0 store rewrote the token after the means
+had moved, the binding answered is one nobody checked. The first credential
+3.1.0 writes ends it.
+
 ## [3.0.0] - 2026-10-01
 
 The stores are split by the role of the data. A key store (`IServiceKeyStore`)
