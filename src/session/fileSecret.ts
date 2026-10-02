@@ -79,9 +79,11 @@ function readBinding(
   secret: SessionSecret,
 ): void {
   if (!secret.authorizationToken && !secret.sessionCookies) return;
-  const issuedFor = vars[keys.issuedFor]?.trim();
+  // Answered exactly as written: a binding is compared as a string, so the
+  // file must not change it (an empty key is "cleared").
+  const issuedFor = vars[keys.issuedFor];
   if (issuedFor) secret.issuedFor = issuedFor;
-  const issuedBy = vars[keys.issuedBy]?.trim();
+  const issuedBy = vars[keys.issuedBy];
   if (issuedBy) secret.issuedBy = issuedBy;
   Object.assign(secret, legacyBinding(vars, keys, secret));
 }

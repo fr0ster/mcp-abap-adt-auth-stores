@@ -53,7 +53,9 @@ export function readServiceKeyStoreOptions(
   }
   const obj = arg as Record<string, unknown>;
   // A logger — console included, which also has a `log` method — has these.
+  // One with only some of them is refused now, not at its first log call.
   if (LOGGER_METHODS.some((m) => typeof obj[m] === 'function')) {
+    assertLogger(owner, obj, 'the logger');
     return { log: arg as ILogger };
   }
   const unknown = Object.keys(obj)
@@ -85,8 +87,27 @@ export function readServiceKeyStoreOptions(
       `${owner}: the log option is a ${typeof obj.log}; it takes a logger`,
     );
   }
+  if (obj.log !== undefined && obj.log !== null) {
+    assertLogger(owner, obj.log as Record<string, unknown>, 'the log option');
+  }
   return {
     grantType: obj.grantType as DestinationGrant | undefined,
     log: (obj.log ?? undefined) as ILogger | undefined,
   };
+}
+
+/** A logger has every ILogger method as a function; names what it lacks. */
+function assertLogger(
+  owner: string,
+  candidate: Record<string, unknown>,
+  what: string,
+): void {
+  const lacking = LOGGER_METHODS.filter(
+    (m) => typeof candidate[m] !== 'function',
+  );
+  if (lacking.length > 0) {
+    throw new TypeError(
+      `${owner}: ${what} lacks ${lacking.join(', ')}; a logger has ${LOGGER_METHODS.join(', ')}`,
+    );
+  }
 }

@@ -93,6 +93,21 @@ describe.each(VARIANTS)('$name — the binding', ({ make, tokenOnly, keys }) => 
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('answers issuedFor and issuedBy exactly as written, surrounding spaces included', async () => {
+    const store = make(dir);
+    const spacedFor = `  ${FOR}  `;
+    const spacedBy = `\t${BY} `;
+    await store.saveSession('D', {
+      authorizationToken: TOKEN,
+      issuedFor: spacedFor,
+      issuedBy: spacedBy,
+    });
+
+    const session = await store.loadSession('D');
+    expect(session?.issuedFor).toBe(spacedFor);
+    expect(session?.issuedBy).toBe(spacedBy);
+  });
+
   it('keeps issuedFor and issuedBy written with a token', async () => {
     const store = make(dir);
     await store.saveSession('D', {

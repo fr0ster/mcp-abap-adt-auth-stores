@@ -64,6 +64,26 @@ describe.each(VARIANTS)('$name options', ({ name, Store, key }) => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it.each([
+    ['an empty object', {}],
+    ['a logger without debug', { info() {}, warn() {}, error() {} }],
+    [
+      'methods that are not functions',
+      { debug: 1, info: 1, warn: 1, error: 1 },
+    ],
+  ])(
+    'refuses %s as the log option when the store is built, not at its first log',
+    (_label, log) => {
+      expect(() => new Store(dir, { log } as never)).toThrow(TypeError);
+    },
+  );
+
+  it('refuses a partial logger in the 3.0.0 position when the store is built', () => {
+    expect(() => new Store(dir, { info() {}, error() {} } as never)).toThrow(
+      TypeError,
+    );
+  });
+
   it.each(['authorization_code', 'client_credentials', 'passcode'] as const)(
     'answers grantType %s when it is given',
     async (grantType) => {
