@@ -20,12 +20,21 @@ import { SecretSessionStore } from '../../session/SecretSessionStore';
 import type { SessionSecret } from '../../session/sessionSecret';
 import { withFileLock } from '../../storage/fileLock';
 import { ABAP_SESSION_VARS } from '../../utils/constants';
+import { ABAP_DESTINATION_VARS } from '../destination/EnvDestinationStore';
 
 const KEYS: SecretKeys = {
   authorizationToken: ABAP_SESSION_VARS.AUTHORIZATION_TOKEN,
   sessionCookies: ABAP_SESSION_VARS.SESSION_COOKIES_B64,
   expiresAt: ABAP_SESSION_VARS.EXPIRES_AT,
   refreshToken: ABAP_SESSION_VARS.REFRESH_TOKEN,
+  issuedFor: ABAP_SESSION_VARS.ISSUED_FOR,
+  issuedBy: ABAP_SESSION_VARS.ISSUED_BY,
+  legacy: {
+    serviceUrl: ABAP_DESTINATION_VARS.serviceUrl,
+    sapClient: ABAP_DESTINATION_VARS.sapClient,
+    uaaUrl: ABAP_DESTINATION_VARS.uaaUrl,
+    uaaClientId: ABAP_DESTINATION_VARS.uaaClientId,
+  },
 };
 
 export class EnvFileSessionStore extends SecretSessionStore {

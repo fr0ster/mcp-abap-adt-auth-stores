@@ -3,7 +3,8 @@
  *
  * A session store holds the session secret and nothing else (auth-stores
  * 3.0.0): `authorizationToken` or `sessionCookies`, their `expiresAt`, and the
- * `refreshToken`. A write carrying any other field is refused naming the
+ * `refreshToken` — and, from 3.1.0, what the credential is bound to,
+ * `issuedFor` and `issuedBy` (`applySecret`). A write carrying any other field is refused naming the
  * fields; `setAuthorizationConfig` always refuses (a session holds no client),
  * and `getAuthorizationConfig` answers `null`. Subclasses say only where the
  * secret is kept.
@@ -219,5 +220,8 @@ export function describeSecret(secret: SessionSecret | null): string {
   if (secret.expiresAt !== undefined) parts.push('expiresAt');
   if (secret.refreshToken)
     parts.push(`refreshToken(${formatToken(secret.refreshToken)})`);
+  // what the credential is bound to: named, never its value
+  if (secret.issuedFor) parts.push('issuedFor');
+  if (secret.issuedBy) parts.push('issuedBy');
   return parts.join(', ');
 }

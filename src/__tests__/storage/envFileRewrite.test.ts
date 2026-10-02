@@ -58,7 +58,13 @@ describe('rewriting a shared .env file', () => {
           authorizationToken: 'NEW',
         });
         const afterSet = dotenv.parse(fs.readFileSync(file, 'utf8'));
-        expect(afterSet).toEqual({ ...others, SAP_JWT_TOKEN: 'NEW' });
+        // a credential is written with its binding keys, empty when none
+        expect(afterSet).toEqual({
+          ...others,
+          SAP_JWT_TOKEN: 'NEW',
+          SAP_ISSUED_FOR: '',
+          SAP_ISSUED_BY: '',
+        });
 
         await store.deleteSession('D');
         expect(await store.loadSession('D')).toBeNull();
