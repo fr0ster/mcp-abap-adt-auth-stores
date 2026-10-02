@@ -4,8 +4,9 @@
  * A session store holds the session secret and nothing else (auth-stores
  * 3.0.0): `authorizationToken` or `sessionCookies`, their `expiresAt`, and the
  * `refreshToken` — and, from 3.1.0, what the credential is bound to,
- * `issuedFor` and `issuedBy` (`applySecret`). A write carrying any other field is refused naming the
- * fields; `setAuthorizationConfig` always refuses (a session holds no client),
+ * `issuedFor` and `issuedBy` (`applySecret`). A write carrying any other
+ * field is refused naming the fields; `setAuthorizationConfig` always refuses
+ * (a session holds no client),
  * and `getAuthorizationConfig` answers `null`. Subclasses say only where the
  * secret is kept.
  */
