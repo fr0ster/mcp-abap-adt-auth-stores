@@ -22,8 +22,10 @@ credential is bound to.
   a key. Without the option no grant is answered, as in 3.0.0 — nothing is
   inferred. The 3.0.0 form `(dir, log)` keeps working: an object with a
   logger's methods (`console` included) is the logger. A string or other
-  non-object, an option the store does not take, or a grant it does not know
-  is a `TypeError` at construction, naming what was wrong and never a value.
+  non-object, an option the store does not take, a grant it does not know, or
+  a logger lacking one of `debug`, `info`, `warn`, `error` (as the option or in
+  the 3.0.0 position) is a `TypeError` at construction, naming what was wrong
+  and never a value.
   There is **no `serviceUrl` option**: the resource URL is means of the
   destination, stated in an `EnvDestinationStore` with the key store as its
   fallback (an XSUAA key's own `url` is read as before).
