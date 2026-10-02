@@ -39,6 +39,8 @@ export {
 } from './stores/destination/EnvDestinationStore';
 // Env file stores (for --env=path scenarios)
 export { EnvFileSessionStore } from './stores/env/EnvFileSessionStore';
+// What a SAP service key store takes from whoever builds it (3.1.0)
+export type { ServiceKeyStoreOptions } from './stores/keyStoreOptions';
 export {
   SafeXsuaaSessionStore,
   SafeXsuaaSessionStore as SafeBtpSessionStore,

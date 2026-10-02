@@ -29,7 +29,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type {
-  DestinationGrant,
   IConfig,
   IConnectionConfig,
   IServiceKeyStore,
@@ -51,6 +50,7 @@ import {
   toError,
 } from '../../storage/envFile';
 import { withFileLock } from '../../storage/fileLock';
+import { DESTINATION_GRANTS } from '../keyStoreOptions';
 
 /** The client: `IAuthorizationConfig` without the refresh token (a secret). */
 const CLIENT_FIELDS = ['uaaUrl', 'uaaClientId', 'uaaClientSecret'] as const;
@@ -180,18 +180,7 @@ export interface EnvDestinationStoreOptions {
 }
 
 const AUTH_TYPES = ['basic', 'jwt', 'saml', 'snc'] as const;
-const GRANTS: readonly DestinationGrant[] = [
-  'authorization_code',
-  'client_credentials',
-  'passcode',
-  'oidc_authorization_code',
-  'device_code',
-  'password',
-  'token_exchange',
-  'saml2_pure',
-  'saml2_bearer',
-  'none',
-];
+const GRANTS = DESTINATION_GRANTS;
 
 type Kind = 'string' | 'list' | 'certificates' | 'boolean' | 'number';
 const KIND: Partial<Record<MeansField, Kind>> = {

@@ -13,6 +13,10 @@ import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
 import { ParseError } from '../../errors/StoreErrors';
 import { AbapServiceKeyParser } from '../../parsers/abap/AbapServiceKeyParser';
 import { JsonFileHandler } from '../../utils/JsonFileHandler';
+import {
+  readServiceKeyStoreOptions,
+  type ServiceKeyStoreOptions,
+} from '../keyStoreOptions';
 
 /**
  * ABAP Service key store implementation
@@ -23,16 +27,23 @@ export class AbapServiceKeyStore implements IServiceKeyStore {
   private directory: string;
   private parser: AbapServiceKeyParser;
   private log?: ILogger;
+  private grantType?: ServiceKeyStoreOptions['grantType'];
 
   /**
    * Create a new AbapServiceKeyStore instance
    * @param directory Directory where service key .json files are located
-   * @param log Optional logger for logging operations
+   * @param options `{ grantType?, log? }` — the grant a key cannot state, and
+   *   a logger; or, as in 3.0.0, the logger itself
    */
-  constructor(directory: string, log?: ILogger) {
+  constructor(directory: string, options?: ServiceKeyStoreOptions | ILogger) {
+    const { grantType, log } = readServiceKeyStoreOptions(
+      'AbapServiceKeyStore',
+      options,
+    );
     this.directory = directory;
     this.parser = new AbapServiceKeyParser(log);
     this.log = log;
+    this.grantType = grantType;
   }
 
   /**
@@ -177,14 +188,16 @@ export class AbapServiceKeyStore implements IServiceKeyStore {
       const language = key.abap?.language || key.language;
 
       // A key holds an OAuth client and nothing else: a token destination.
-      // Which grant it uses the key cannot state, so none is answered; and a
-      // token is secret — a key store answers none.
+      // Which grant it uses the key cannot state: the grant is answered only
+      // when whoever built the store stated it. A token is secret — a key
+      // store answers none.
       const result: IConnectionConfig = {
         serviceUrl,
         authType: 'jwt',
         sapClient,
         language,
       };
+      if (this.grantType) result.grantType = this.grantType;
 
       this.log?.info(
         `Connection config loaded from ${filePath}: serviceUrl(${serviceUrl ? `${serviceUrl.substring(0, 50)}...` : 'none'}), client(${sapClient || 'none'}), language(${language || 'none'})`,
