@@ -474,6 +474,17 @@ describe('EnvDestinationStore', () => {
       expect(await store.getAuthorizationConfig('D')).toBeNull();
     });
 
+    it("answers no client for an id written as '' — a client without an id is none", async () => {
+      const store = new EnvDestinationStore(dir);
+      await store.setDestination('D', {
+        uaaUrl: 'https://uaa.example',
+        uaaClientId: '',
+        uaaClientSecret: 'secret',
+      });
+
+      expect(await store.getAuthorizationConfig('D')).toBeNull();
+    });
+
     it('fills what the file leaves out from the fallback, field by field', async () => {
       const store = new EnvDestinationStore(dir, {
         fallback: fakeKeyStore(null, CLIENT),

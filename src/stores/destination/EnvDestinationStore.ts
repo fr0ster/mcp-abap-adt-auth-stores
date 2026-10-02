@@ -13,7 +13,8 @@
  *   `XSUAA_*` (`XSUAA_DESTINATION_VARS`). A 2.x session file is already a
  *   readable destination; nothing is inferred from it — a file without
  *   `SAP_AUTH_TYPE` states no type.
- * - **The client is its id**: answered whenever `uaaClientId` is stated; a
+ * - **The client is its id**: answered whenever `uaaClientId` is stated and
+ *   not empty (`''` is no id, so no client); a
  *   `uaaUrl` or `uaaClientSecret` not stated is answered as `''`. A public
  *   client is a secret of `''`, written as an empty value or not at all.
  * - **A fallback** `IServiceKeyStore` (a SAP service key store, say) fills, field
@@ -299,7 +300,8 @@ export class EnvDestinationStore implements IServiceKeyStore {
       else if (fallback && typeof fallback[field] === 'string')
         client[field] = fallback[field];
     }
-    // The client is its id: answered whenever an id is stated. A field not
+    // The client is its id: answered whenever a non-empty id is stated ('' is
+    // no id, so no client — a client without an id is none). A field not
     // stated is answered as '' — not stated — and whoever builds a grant
     // decides whether it needs it (an OIDC client has an issuer, not a UAA
     // URL; a public client has no secret). The store judges no grant. The

@@ -18,8 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and a public client has no secret: both were answered as no client at all.
   Now a field not stated is answered as `''` — not stated — and whoever builds
   the grant decides whether it needs it (`@mcp-abap-adt/auth-broker` 4 counts
-  `''` as missing and names the field). A destination without a client id
-  still answers no client. A 3.x public-client file without the
+  `''` as missing and names the field). A destination without a client id —
+  or with an id written as `''`, which 3.1.0 answered when the other two were
+  stated — answers no client: a client without an id is none. A 3.x public-client file without the
   `SAP_UAA_CLIENT_SECRET` line is a public client as it is.
 
 ## [3.1.0] - 2026-10-02
