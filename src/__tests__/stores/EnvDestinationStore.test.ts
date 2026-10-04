@@ -562,6 +562,7 @@ describe('EnvDestinationStore', () => {
           secret: 'SAP_UAA_CLIENT_SECRET',
           url: 'SAP_UAA_URL',
           id: 'SAP_UAA_CLIENT_ID',
+          language: 'SAP_LANGUAGE',
         },
       },
       {
@@ -574,6 +575,7 @@ describe('EnvDestinationStore', () => {
           secret: 'XSUAA_UAA_CLIENT_SECRET',
           url: 'XSUAA_UAA_URL',
           id: 'XSUAA_UAA_CLIENT_ID',
+          language: 'XSUAA_LANGUAGE',
         },
       },
     ];
@@ -775,6 +777,8 @@ describe('EnvDestinationStore', () => {
         const error = await refusalOf(store.getClientCertificate('D'));
         expect(error.reason).toBe('incomplete');
         expect(error.variables).toEqual([names.url, names.id]);
+        // the three make it a certificate destination: no client here either
+        expect(await store.getAuthorizationConfig('D')).toBeNull();
         expectNoCertificateFileRead();
       });
 
@@ -884,13 +888,35 @@ describe('EnvDestinationStore', () => {
           return stub;
         }
 
-        it("a file stating no client kind answers the fallback's certificate", async () => {
-          writeEnv({ [names.url]: UAA_URL, [names.id]: 'client-id' });
+        it("a file stating no client answers the fallback's certificate", async () => {
+          writeEnv({ [names.language]: 'EN' });
           const fallback = keyStore(true);
           const store = new EnvDestinationStore(dir, { variables, fallback });
 
           expect(await store.getClientCertificate('D')).toEqual(FALLBACK_CERT);
           expect(fallback.calls).toBe(1);
+        });
+
+        it("a client id written as '' is no client: the fallback's certificate", async () => {
+          writeEnv({ [names.id]: '' });
+          const fallback = keyStore(true);
+          const store = new EnvDestinationStore(dir, { variables, fallback });
+
+          expect(await store.getClientCertificate('D')).toEqual(FALLBACK_CERT);
+        });
+
+        it('a file stating a public client answers null, the fallback unasked — one client from both methods', async () => {
+          writeEnv({ [names.url]: UAA_URL, [names.id]: 'file-client' });
+          const fallback = keyStore(true);
+          const store = new EnvDestinationStore(dir, { variables, fallback });
+
+          expect(await store.getAuthorizationConfig('D')).toEqual({
+            uaaUrl: UAA_URL,
+            uaaClientId: 'file-client',
+            uaaClientSecret: '',
+          });
+          expect(await store.getClientCertificate('D')).toBeNull();
+          expect(fallback.calls).toBe(0);
         });
 
         it("no file at all answers the fallback's certificate", async () => {
@@ -901,7 +927,7 @@ describe('EnvDestinationStore', () => {
         });
 
         it('a fallback without the method answers null', async () => {
-          writeEnv({ [names.url]: UAA_URL, [names.id]: 'client-id' });
+          writeEnv({ [names.language]: 'EN' });
           const store = new EnvDestinationStore(dir, {
             variables,
             fallback: keyStore(false),

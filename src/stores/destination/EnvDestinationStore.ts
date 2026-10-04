@@ -31,10 +31,16 @@
  *   all, or any with the client secret variable (`''` included) → both throw
  *   a `ClientCertificateError` naming the variables. A variable written as `''`
  *   is not set. A custom `variables` map without the three keys reads none of
- *   them. A file stating none of the three and no client secret answers the
- *   fallback's `getClientCertificate` (`null` without one); stating a client
- *   secret, `null`. A file stating any of the three decides alone, and its
- *   certificate's client id and UAA URL are the file's, never the fallback's.
+ *   them. A file stating none of the three and no client — no client secret
+ *   and no client id — answers the fallback's `getClientCertificate` (`null`
+ *   without one); a file stating a client (a secret, or an id: the client is
+ *   its id) answers `null`, the fallback unasked, so both methods answer the
+ *   same client. A file stating any of the three decides alone, and its
+ *   certificate's client id and UAA URL are the file's, never the fallback's:
+ *   with all three but no `uaaUrl` or `uaaClientId`, `getClientCertificate`
+ *   refuses as incomplete while `getAuthorizationConfig` answers `null` — the
+ *   three make it a certificate destination either way, and only the
+ *   certificate needs the id and URL.
  * - **Writing** is this class's own `setDestination`, outside the read-only
  *   contract; it touches only the means keys, so the file may be shared with a
  *   session store, which touches only its secret keys. Writing a certificate
@@ -432,9 +438,10 @@ export class EnvDestinationStore implements IServiceKeyStore {
   /**
    * The destination's client certificate. The file decides when it states any
    * of the three variables (or the map has no key for them, which states
-   * none). Stating none: `null` when the file states a client secret (a secret
-   * client), else the fallback's `getClientCertificate` — `null` without a
-   * fallback or one without the method. The two files are read
+   * none). Stating none: `null` when the file states a client — a client
+   * secret, or a non-empty client id — else the fallback's
+   * `getClientCertificate`, `null` without a fallback or one without the
+   * method. The two files are read
    * only once the variables say a certificate client; the client id and UAA
    * URL are the file's. A failure is fixed words naming variables — never a
    * path, a file's content or the underlying error.
@@ -444,9 +451,13 @@ export class EnvDestinationStore implements IServiceKeyStore {
   ): Promise<IClientCertificate | null> {
     const file = this.readFile(destination);
     if (!this.certificateStated(destination, file)) {
-      // The file states a secret client: no certificate, the fallback unasked.
+      // The file states a client — a secret, or an id (the client is its id):
+      // that client has no certificate, and the fallback is not asked, or the
+      // two methods would answer two different clients.
       if ('uaaClientSecret' in file) return null;
-      // The file states no client kind: the fallback's certificate, if any.
+      if (typeof file.uaaClientId === 'string' && file.uaaClientId !== '')
+        return null;
+      // The file states no client: the fallback's certificate, if any.
       return (await this.fallback?.getClientCertificate?.(destination)) ?? null;
     }
     const missing = (['uaaUrl', 'uaaClientId'] as const).filter(
