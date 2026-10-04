@@ -77,7 +77,7 @@ export class AbapServiceKeyStore implements IServiceKeyStore {
     const filePath = path.join(this.directory, fileName);
     this.log?.debug(`Reading service key file: ${filePath}`);
 
-    const rawData = await JsonFileHandler.load(fileName, this.directory);
+    const rawData = await this.loadKeyFile(destination);
     if (!rawData) {
       this.log?.debug(`Service key file not found: ${filePath}`);
       return null;
@@ -124,15 +124,8 @@ export class AbapServiceKeyStore implements IServiceKeyStore {
         `Authorization config loaded from ${filePath}: uaaUrl(${result.uaaUrl.substring(0, 40)}...), clientId(${result.uaaClientId.substring(0, 20)}...)`,
       );
       return result;
-    } catch (error) {
-      this.log?.error(
-        `Failed to parse service key from ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      throw new ParseError(
-        `Failed to parse service key for destination "${destination}"`,
-        filePath,
-        error instanceof Error ? error : undefined,
-      );
+    } catch {
+      throw this.notAnAbapKey(destination);
     }
   }
 
@@ -148,7 +141,7 @@ export class AbapServiceKeyStore implements IServiceKeyStore {
     const filePath = path.join(this.directory, fileName);
     this.log?.debug(`Reading service key file: ${filePath}`);
 
-    const rawData = await JsonFileHandler.load(fileName, this.directory);
+    const rawData = await this.loadKeyFile(destination);
     if (!rawData) {
       this.log?.debug(`Service key file not found: ${filePath}`);
       return null;
@@ -203,13 +196,36 @@ export class AbapServiceKeyStore implements IServiceKeyStore {
         `Connection config loaded from ${filePath}: serviceUrl(${serviceUrl ? `${serviceUrl.substring(0, 50)}...` : 'none'}), client(${sapClient || 'none'}), language(${language || 'none'})`,
       );
       return result;
-    } catch (error) {
-      this.log?.error(
-        `Failed to parse service key from ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      throw new Error(
-        `Failed to parse service key for destination "${destination}": ${error instanceof Error ? error.message : String(error)}`,
-      );
+    } catch {
+      throw this.notAnAbapKey(destination);
     }
+  }
+
+  /**
+   * The key file's JSON, or `null` when there is none. Any failure to read or
+   * parse it is refused in fixed words: the underlying message may quote the
+   * file (Node's `JSON.parse` does), and the file holds a client secret or a
+   * private key — so no message, path or cause is passed on.
+   */
+  private async loadKeyFile(
+    destination: string,
+  ): Promise<Record<string, unknown> | null> {
+    try {
+      return await JsonFileHandler.load(`${destination}.json`, this.directory);
+    } catch {
+      const message = `AbapServiceKeyStore: the ABAP service key file of "${destination}" cannot be read as JSON`;
+      this.log?.error(message);
+      throw new ParseError(message);
+    }
+  }
+
+  /**
+   * A key the parser refuses, in fixed words: no parser message, path or
+   * cause is passed on (the same rule as for the file).
+   */
+  private notAnAbapKey(destination: string): ParseError {
+    const message = `Failed to parse service key for destination "${destination}": not an ABAP service key (a uaa object with url, clientid and clientsecret)`;
+    this.log?.error(message);
+    return new ParseError(message);
   }
 }

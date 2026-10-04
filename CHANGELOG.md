@@ -57,6 +57,23 @@ before; a key carrying both a secret and a certificate is now refused (see
   its `ClientCertificateProblem` type. Fixed words naming the destination and
   those names — never a value, a path, a file's content or a certificate.
 
+### Security
+
+- **A malformed service key file no longer leaks what it holds.**
+  `AbapServiceKeyStore` and `XsuaaServiceKeyStore` passed a load failure on
+  as it came, and Node's `JSON.parse` quotes the input in its message (Node 26:
+  `Unexpected token 'M', "{"key":MIIPRIVATE"... is not valid JSON`) — so a
+  broken key file put client-secret or private-key bytes into the thrown error
+  and the error log. Every method of both stores now refuses a file it cannot
+  read or parse with a `ParseError` in fixed words naming the destination and
+  the kind of key file (`… the XSUAA service key file of "<destination>"
+  cannot be read as JSON`), with no `filePath` and no `cause`; a key the ABAP
+  parser refuses likewise (`Failed to parse service key for destination
+  "<destination>": not an ABAP service key …`). `getConnectionConfig` of
+  `AbapServiceKeyStore` threw a plain `Error` with the parser's message; it
+  throws that `ParseError` now. `JsonFileHandler`, the loaders and the parsers
+  are unchanged.
+
 ### Changed
 
 - **`XsuaaServiceKeyStore` refuses a key carrying both a `clientsecret` and a

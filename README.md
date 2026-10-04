@@ -483,7 +483,7 @@ try {
 
 **Error Types:**
 - **`FileNotFoundError`** - Service key file not found (includes `filePath`)
-- **`ParseError`** - JSON parsing failed or invalid format (includes `filePath` and `cause`)
+- **`ParseError`** - JSON parsing failed or invalid format (includes `filePath` and `cause`). From 3.3.0 the service key stores (`AbapServiceKeyStore`, `XsuaaServiceKeyStore`) raise it in fixed words naming the destination, with no `filePath` and no `cause`: an underlying message may quote the file (Node's `JSON.parse` does), and a key file holds a client secret or a private key
 - **`InvalidConfigError`** - Required configuration fields missing (includes `missingFields` array)
 - **`StorageError`** - File read, write or permission error (includes `operation` and `cause`); a session file that exists but cannot be read raises it — only a missing file is `null`
 - **`RefusedFieldsError`** (code `INVALID_CONFIG`) - A write carried fields the store does not hold: means given to a session store, a secret given to `EnvDestinationStore` (includes `fields`; the message names fields, never values)

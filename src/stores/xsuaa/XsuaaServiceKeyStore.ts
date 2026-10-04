@@ -10,7 +10,7 @@ import type {
 } from '@mcp-abap-adt/interfaces-auth-broker';
 import type { IAuthorizationConfig } from '@mcp-abap-adt/interfaces-auth-sap';
 import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
-import { ClientCertificateError } from '../../errors/StoreErrors';
+import { ClientCertificateError, ParseError } from '../../errors/StoreErrors';
 import { JsonFileHandler } from '../../utils/JsonFileHandler';
 import {
   readServiceKeyStoreOptions,
@@ -104,10 +104,7 @@ export class XsuaaServiceKeyStore implements IServiceKeyStore {
     this.log?.debug(
       `Loading authorization config for destination: ${destination}`,
     );
-    const rawData = await JsonFileHandler.load(
-      `${destination}.json`,
-      this.directory,
-    );
+    const rawData = await this.loadKeyFile(destination);
     if (!rawData) {
       this.log?.debug(`Service key file not found: ${destination}.json`);
       return null;
@@ -172,10 +169,7 @@ export class XsuaaServiceKeyStore implements IServiceKeyStore {
   async getClientCertificate(
     destination: string,
   ): Promise<IClientCertificate | null> {
-    const rawData = await JsonFileHandler.load(
-      `${destination}.json`,
-      this.directory,
-    );
+    const rawData = await this.loadKeyFile(destination);
     if (!rawData || typeof rawData !== 'object') return null;
     let data = rawData as Record<string, unknown>;
     if (data.credentials && typeof data.credentials === 'object') {
@@ -203,6 +197,24 @@ export class XsuaaServiceKeyStore implements IServiceKeyStore {
       key: uaa.key as string,
       certUrl: uaa.certurl as string,
     };
+  }
+
+  /**
+   * The key file's JSON, or `null` when there is none. Any failure to read or
+   * parse it is refused in fixed words: the underlying message may quote the
+   * file (Node's `JSON.parse` does), and the file holds a client secret or a
+   * private key — so no message, path or cause is passed on.
+   */
+  private async loadKeyFile(
+    destination: string,
+  ): Promise<Record<string, unknown> | null> {
+    try {
+      return await JsonFileHandler.load(`${destination}.json`, this.directory);
+    } catch {
+      const message = `XsuaaServiceKeyStore: the XSUAA service key file of "${destination}" cannot be read as JSON`;
+      this.log?.error(message);
+      throw new ParseError(message);
+    }
   }
 
   /**
@@ -236,10 +248,7 @@ export class XsuaaServiceKeyStore implements IServiceKeyStore {
     this.log?.debug(
       `Loading connection config for destination: ${destination}`,
     );
-    const rawData = await JsonFileHandler.load(
-      `${destination}.json`,
-      this.directory,
-    );
+    const rawData = await this.loadKeyFile(destination);
     if (!rawData) {
       this.log?.debug(`Service key file not found: ${destination}.json`);
       return null;
