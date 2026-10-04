@@ -32,6 +32,7 @@ export {
 // Destination store: a destination's means in <dir>/<destination>.env
 export {
   ABAP_DESTINATION_VARS,
+  type CertificateField,
   type DestinationMeans,
   type DestinationVariables,
   EnvDestinationStore,

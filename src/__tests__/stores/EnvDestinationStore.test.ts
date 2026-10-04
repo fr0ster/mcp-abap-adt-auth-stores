@@ -861,6 +861,109 @@ describe('EnvDestinationStore', () => {
         expect(fs.existsSync(path.join(dir, 'D.env'))).toBe(false);
       });
 
+      describe('the fallback certificate', () => {
+        const FALLBACK_CERT: IClientCertificate = {
+          uaaUrl: 'https://fallback.authentication.example',
+          clientId: 'fallback-client',
+          certificate: 'SENTINEL-fallback-certificate',
+          key: 'SENTINEL-fallback-key',
+          certUrl: 'https://fallback.authentication.cert.example',
+        };
+        /** An XsuaaServiceKeyStore-like stub, with or without the method. */
+        function keyStore(withMethod: boolean) {
+          const stub = fakeKeyStore(null, null) as IServiceKeyStore & {
+            calls: number;
+          };
+          stub.calls = 0;
+          if (withMethod) {
+            stub.getClientCertificate = async () => {
+              stub.calls++;
+              return FALLBACK_CERT;
+            };
+          }
+          return stub;
+        }
+
+        it("a file stating no client kind answers the fallback's certificate", async () => {
+          writeEnv({ [names.url]: UAA_URL, [names.id]: 'client-id' });
+          const fallback = keyStore(true);
+          const store = new EnvDestinationStore(dir, { variables, fallback });
+
+          expect(await store.getClientCertificate('D')).toEqual(FALLBACK_CERT);
+          expect(fallback.calls).toBe(1);
+        });
+
+        it("no file at all answers the fallback's certificate", async () => {
+          const fallback = keyStore(true);
+          const store = new EnvDestinationStore(dir, { variables, fallback });
+
+          expect(await store.getClientCertificate('D')).toEqual(FALLBACK_CERT);
+        });
+
+        it('a fallback without the method answers null', async () => {
+          writeEnv({ [names.url]: UAA_URL, [names.id]: 'client-id' });
+          const store = new EnvDestinationStore(dir, {
+            variables,
+            fallback: keyStore(false),
+          });
+
+          expect(await store.getClientCertificate('D')).toBeNull();
+        });
+
+        it.each(['client-secret', ''])(
+          'a file stating a client secret (%j) answers null, the fallback unasked',
+          async (secret) => {
+            writeEnv({
+              [names.url]: UAA_URL,
+              [names.id]: 'client-id',
+              [names.secret]: secret,
+            });
+            const fallback = keyStore(true);
+            const store = new EnvDestinationStore(dir, { variables, fallback });
+
+            expect(await store.getClientCertificate('D')).toBeNull();
+            expect(fallback.calls).toBe(0);
+          },
+        );
+
+        it("a file stating all three answers the file's certificate, the fallback unasked", async () => {
+          writeEnv({
+            [names.url]: UAA_URL,
+            [names.id]: 'client-id',
+            ...certLines(names, ['cert', 'key', 'certUrl']),
+          });
+          const fallback = keyStore(true);
+          const store = new EnvDestinationStore(dir, { variables, fallback });
+
+          expect(await store.getClientCertificate('D')).toEqual({
+            uaaUrl: UAA_URL,
+            clientId: 'client-id',
+            certificate: CERT_PEM,
+            key: KEY_PEM,
+            certUrl: CERT_URL,
+          });
+          expect(fallback.calls).toBe(0);
+        });
+
+        it('a file stating some, or any with a secret, refuses, the fallback unasked', async () => {
+          const fallback = keyStore(true);
+          const store = new EnvDestinationStore(dir, { variables, fallback });
+
+          writeEnv(certLines(names, ['cert']));
+          expect(
+            (await refusalOf(store.getClientCertificate('D'))).reason,
+          ).toBe('incomplete');
+          writeEnv({
+            [names.secret]: 'client-secret',
+            ...certLines(names, ['cert', 'key', 'certUrl']),
+          });
+          expect(
+            (await refusalOf(store.getClientCertificate('D'))).reason,
+          ).toBe('mixed');
+          expect(fallback.calls).toBe(0);
+        });
+      });
+
       it('deleteDestination removes the three', async () => {
         const store = new EnvDestinationStore(dir, { variables });
         await store.setDestination('D', {

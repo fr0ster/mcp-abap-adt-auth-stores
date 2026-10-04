@@ -30,9 +30,11 @@
  *   public one) and `getClientCertificate` reads the two files; some but not
  *   all, or any with the client secret variable (`''` included) → both throw
  *   a `ClientCertificateError` naming the variables. A variable written as `''`
- *   is not set. A custom `variables` map without the three keys supports no
- *   certificate (`getClientCertificate` → `null`). The certificate's client id
- *   and UAA URL are the file's, never the fallback's.
+ *   is not set. A custom `variables` map without the three keys reads none of
+ *   them. A file stating none of the three and no client secret answers the
+ *   fallback's `getClientCertificate` (`null` without one); stating a client
+ *   secret, `null`. A file stating any of the three decides alone, and its
+ *   certificate's client id and UAA URL are the file's, never the fallback's.
  * - **Writing** is this class's own `setDestination`, outside the read-only
  *   contract; it touches only the means keys, so the file may be shared with a
  *   session store, which touches only its secret keys. Writing a certificate
@@ -120,11 +122,15 @@ const CERT_FIELDS = [
   'uaaClientKeyPath',
   'uaaCertUrl',
 ] as const;
-type CertField = (typeof CERT_FIELDS)[number];
+export type CertificateField = (typeof CERT_FIELDS)[number];
 
-export type MeansField = ConnectionField | ClientField | CertField;
+/** The means fields of `IConfig`: the connection and the client. */
+export type MeansField = ConnectionField | ClientField;
 
-const MEANS_FIELDS: readonly MeansField[] = [
+/** Every field this store keeps: `IConfig`'s means and its own certificate. */
+type StoredField = MeansField | CertificateField;
+
+const STORED_FIELDS: readonly StoredField[] = [
   ...CONNECTION_FIELDS,
   ...CLIENT_FIELDS,
   ...CERT_FIELDS,
@@ -136,11 +142,10 @@ const MEANS_FIELDS: readonly MeansField[] = [
  * no certificate destination.
  */
 export type DestinationVariables = Readonly<
-  Record<Exclude<MeansField, CertField>, string> &
-    Partial<Record<CertField, string>>
+  Record<MeansField, string> & Partial<Record<CertificateField, string>>
 >;
 
-const SUFFIXES: Record<MeansField, string> = {
+const SUFFIXES: Record<StoredField, string> = {
   serviceUrl: 'URL',
   authType: 'AUTH_TYPE',
   grantType: 'GRANT_TYPE',
@@ -181,10 +186,10 @@ const SUFFIXES: Record<MeansField, string> = {
 
 function withPrefix(
   prefix: string,
-  overrides: Partial<Record<MeansField, string>> = {},
+  overrides: Partial<Record<StoredField, string>> = {},
 ): DestinationVariables {
-  const vars = {} as Record<MeansField, string>;
-  for (const field of MEANS_FIELDS) {
+  const vars = {} as Record<StoredField, string>;
+  for (const field of STORED_FIELDS) {
     vars[field] = overrides[field] ?? `${prefix}_${SUFFIXES[field]}`;
   }
   return Object.freeze(vars);
@@ -210,7 +215,9 @@ export const XSUAA_DESTINATION_VARS: DestinationVariables = withPrefix(
 
 /** A means write: a value sets a field, `null` removes it, absent leaves it. */
 export type DestinationMeans = {
-  [K in MeansField]?: (K extends keyof IConfig ? IConfig[K] : string) | null;
+  [K in MeansField]?: IConfig[K] | null;
+} & {
+  [K in CertificateField]?: string | null;
 };
 
 export interface EnvDestinationStoreOptions {
@@ -231,7 +238,7 @@ type Kind =
   | 'certificates'
   | 'boolean'
   | 'number';
-const KIND: Partial<Record<MeansField, Kind>> = {
+const KIND: Partial<Record<StoredField, Kind>> = {
   uaaClientCertPath: 'nonEmpty',
   uaaClientKeyPath: 'nonEmpty',
   uaaCertUrl: 'nonEmpty',
@@ -240,7 +247,7 @@ const KIND: Partial<Record<MeansField, Kind>> = {
   samlIdpInitiated: 'boolean',
   samlClockSkewMs: 'number',
 };
-const kindOf = (field: MeansField): Kind => KIND[field] ?? 'string';
+const kindOf = (field: StoredField): Kind => KIND[field] ?? 'string';
 
 export class EnvDestinationStore implements IServiceKeyStore {
   private readonly directory: string;
@@ -291,7 +298,7 @@ export class EnvDestinationStore implements IServiceKeyStore {
   }
 
   /** The means the file states: every field whose key is present. */
-  private readFile(destination: string): Partial<Record<MeansField, unknown>> {
+  private readFile(destination: string): Partial<Record<StoredField, unknown>> {
     const file = this.fileOf(destination);
     let vars: Record<string, string> | null;
     try {
@@ -304,9 +311,9 @@ export class EnvDestinationStore implements IServiceKeyStore {
         cause,
       );
     }
-    const means: Partial<Record<MeansField, unknown>> = {};
+    const means: Partial<Record<StoredField, unknown>> = {};
     if (vars === null) return means;
-    for (const field of MEANS_FIELDS) {
+    for (const field of STORED_FIELDS) {
       const key = this.variables[field];
       if (key === undefined || !(key in vars)) continue;
       const value = decode(field, key, vars[key], destination);
@@ -343,7 +350,7 @@ export class EnvDestinationStore implements IServiceKeyStore {
    */
   private certificateStated(
     destination: string,
-    file: Partial<Record<MeansField, unknown>>,
+    file: Partial<Record<StoredField, unknown>>,
   ): boolean {
     const set = CERT_FIELDS.filter(
       (field) => typeof file[field] === 'string' && file[field] !== '',
@@ -371,7 +378,7 @@ export class EnvDestinationStore implements IServiceKeyStore {
   }
 
   /** A field's variable; only a field read from the file is asked for. */
-  private variableOf(field: MeansField): string {
+  private variableOf(field: StoredField): string {
     return this.variables[field] as string;
   }
 
@@ -423,8 +430,11 @@ export class EnvDestinationStore implements IServiceKeyStore {
   }
 
   /**
-   * The destination's client certificate: `null` when none of the three
-   * variables is set (or the map has no key for them). The two files are read
+   * The destination's client certificate. The file decides when it states any
+   * of the three variables (or the map has no key for them, which states
+   * none). Stating none: `null` when the file states a client secret (a secret
+   * client), else the fallback's `getClientCertificate` — `null` without a
+   * fallback or one without the method. The two files are read
    * only once the variables say a certificate client; the client id and UAA
    * URL are the file's. A failure is fixed words naming variables — never a
    * path, a file's content or the underlying error.
@@ -433,7 +443,12 @@ export class EnvDestinationStore implements IServiceKeyStore {
     destination: string,
   ): Promise<IClientCertificate | null> {
     const file = this.readFile(destination);
-    if (!this.certificateStated(destination, file)) return null;
+    if (!this.certificateStated(destination, file)) {
+      // The file states a secret client: no certificate, the fallback unasked.
+      if ('uaaClientSecret' in file) return null;
+      // The file states no client kind: the fallback's certificate, if any.
+      return (await this.fallback?.getClientCertificate?.(destination)) ?? null;
+    }
     const missing = (['uaaUrl', 'uaaClientId'] as const).filter(
       (field) => typeof file[field] !== 'string' || file[field] === '',
     );
@@ -464,7 +479,7 @@ export class EnvDestinationStore implements IServiceKeyStore {
 
   private async readCertificateFile(
     destination: string,
-    field: CertField,
+    field: CertificateField,
     filePath: string,
   ): Promise<string> {
     try {
@@ -500,7 +515,7 @@ export class EnvDestinationStore implements IServiceKeyStore {
     means: DestinationMeans,
   ): Promise<void> {
     const refused = carriedFields(means)
-      .filter((field) => !(MEANS_FIELDS as readonly string[]).includes(field))
+      .filter((field) => !(STORED_FIELDS as readonly string[]).includes(field))
       .sort();
     if (refused.length > 0) {
       throw new RefusedFieldsError(
@@ -508,7 +523,7 @@ export class EnvDestinationStore implements IServiceKeyStore {
         refused,
       );
     }
-    const given = (field: MeansField): unknown =>
+    const given = (field: StoredField): unknown =>
       (means as Record<string, unknown>)[field];
     const unnamed = CERT_FIELDS.filter(
       (field) => this.variables[field] === undefined && given(field) != null,
@@ -537,7 +552,7 @@ export class EnvDestinationStore implements IServiceKeyStore {
       );
     }
     const updates: Record<string, string | null> = {};
-    for (const field of MEANS_FIELDS) {
+    for (const field of STORED_FIELDS) {
       const value = given(field);
       const key = this.variables[field];
       if (value === undefined || key === undefined) continue;
@@ -573,7 +588,7 @@ export class EnvDestinationStore implements IServiceKeyStore {
    */
   async deleteDestination(destination: string): Promise<void> {
     const removal: DestinationMeans = {};
-    for (const field of MEANS_FIELDS) {
+    for (const field of STORED_FIELDS) {
       (removal as Record<string, null>)[field] = null;
     }
     await this.setDestination(destination, removal);
@@ -589,7 +604,7 @@ function formError(destination: string, field: string, form: string): Error {
 
 /** A field's value as its env text, or a refusal naming the field. */
 function encode(
-  field: MeansField,
+  field: StoredField,
   value: unknown,
   destination: string,
 ): string {
@@ -651,7 +666,7 @@ function encode(
 
 /** A field's value from its env text; undefined for an empty typed value. */
 function decode(
-  field: MeansField,
+  field: StoredField,
   key: string,
   text: string,
   destination: string,
