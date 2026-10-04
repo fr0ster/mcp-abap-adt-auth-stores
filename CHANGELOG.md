@@ -7,6 +7,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-10-05
+
+Client certificates: an XSUAA x509 service key, and a certificate destination
+in an `.env` file, answer `IServiceKeyStore.getClientCertificate`
+(`@mcp-abap-adt/interfaces-auth-broker` 1.2.0). Every 3.2.0 answer of
+`XsuaaServiceKeyStore` is kept — a key with a secret answers its secret client,
+also when it carries a certificate too; a file without the certificate
+variables and a variables map written for 3.2.0 answer as before.
+
+### Added
+
+- **`XsuaaServiceKeyStore.getClientCertificate(destination)`.** A key — bare or
+  in a `credentials` wrapper — carrying `url`, `clientid`, `certificate`, `key`
+  and `certurl` (what XSUAA issues for `{"credential-type": "x509"}`) answers
+  `{ uaaUrl, clientId, certificate, key, certUrl }`, the PEM as given (CRLF and
+  chains untouched). Both shapes are read: without a `clientsecret` (as our
+  BTP trial issued it), `getAuthorizationConfig` answers `null`, so no consumer
+  reads the missing secret as a public client; with one (a shape SAP
+  documents for x509 credentials), the key offers both clients —
+  `getAuthorizationConfig` and `getServiceKey` answer the secret client exactly
+  as in 3.2.0, and such a key now **also** answers `getClientCertificate`. The
+  consumer chooses which to use; `credential-type` is not read. A key with no
+  `certificate` and no `key` answers `null`. A key carrying part of a
+  certificate client only (one of `certificate` / `key`, or no `certurl`) is
+  refused by `getClientCertificate` with a `ClientCertificateError`
+  (`incomplete`), naming the missing fields; its other answers are 3.2.0's. No log line or refusal carries a value of the key.
+  The loaders (`loadServiceKey`, `loadXSUAAServiceKey`) and
+  `XsuaaServiceKeyParser` do not read x509 keys — they answer as in 3.2.0
+  (`null`, or no supported format), so no direct consumer reads a missing
+  `clientsecret` as a public client. `AbapServiceKeyStore` is unchanged.
+- **`EnvDestinationStore.getClientCertificate(destination)`** and three means
+  of its own, the exported `CertificateField`: `uaaClientCertPath`,
+  `uaaClientKeyPath`, `uaaCertUrl` — two paths and a URL, never PEM. Variables:
+  `SAP_UAA_CLIENT_CERT_PATH`, `SAP_UAA_CLIENT_KEY_PATH`, `SAP_UAA_CERT_URL`
+  (`ABAP_DESTINATION_VARS`); `XSUAA_UAA_CLIENT_CERT_PATH`,
+  `XSUAA_UAA_CLIENT_KEY_PATH`, `XSUAA_UAA_CERT_URL` (`XSUAA_DESTINATION_VARS`).
+  Which variables are set decides, no file read to decide: none → as before;
+  all three and no client secret variable → a certificate client
+  (`getAuthorizationConfig` `null`; `getClientCertificate` reads the two
+  files, with the file's own UAA URL and client id); some but not all, or any
+  with the client secret variable → both methods throw. The fallback's
+  certificate is asked only when the file states no client — no client secret,
+  no client id, none of the three. `setDestination` writes them; writing a
+  certificate client removes the client secret variable, writing a secret
+  client removes the three. The three keys are optional in
+  `DestinationVariables`: a custom map without them supports no certificate
+  destination (`null`; a certificate write refused with `InvalidConfigError`),
+  and a secret write leaves an unmapped certificate line in the file as it is.
+- **`ClientCertificateError`** (code `INVALID_CONFIG`; `reason`: `incomplete`,
+  `mixed` or `unreadable`; `variables`: env keys or service key fields) and
+  its `ClientCertificateProblem` type. Fixed words naming the destination and
+  those names — never a value, a path, a file's content or a certificate.
+
+### Security
+
+- **A malformed service key file no longer leaks what it holds.**
+  `AbapServiceKeyStore` and `XsuaaServiceKeyStore` passed a load failure on
+  as it came, and Node's `JSON.parse` quotes the input in its message (Node 26:
+  `Unexpected token 'M', "{"key":MIIPRIVATE"... is not valid JSON`) — so a
+  broken key file put client-secret or private-key bytes into the thrown error
+  and the error log. Every method of both stores now refuses a file it cannot
+  read or parse with a `ParseError` in fixed words naming the destination and
+  the kind of key file (`… the XSUAA service key file of "<destination>"
+  cannot be read as JSON`), with no `filePath` and no `cause`; a key the ABAP
+  parser refuses likewise (`Failed to parse service key for destination
+  "<destination>": not an ABAP service key …`). `getConnectionConfig` of
+  `AbapServiceKeyStore` threw a plain `Error` with the parser's message; it
+  throws that `ParseError` now. `JsonFileHandler`, the loaders and the parsers
+  are unchanged.
+
+### Changed
+
+- `@mcp-abap-adt/interfaces-auth-broker` `^1.2.0` (`IClientCertificate`, the
+  optional `IServiceKeyStore.getClientCertificate`).
+
 ## [3.2.0] - 2026-10-02
 
 ### Changed

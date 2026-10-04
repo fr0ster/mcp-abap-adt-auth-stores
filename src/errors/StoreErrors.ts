@@ -101,3 +101,42 @@ export class RefusedFieldsError extends StoreError {
     Object.setPrototypeOf(this, RefusedFieldsError.prototype);
   }
 }
+
+/** Why a destination's client certificate is refused. */
+export type ClientCertificateProblem = 'incomplete' | 'mixed' | 'unreadable';
+
+/**
+ * Error thrown when a destination's client certificate cannot be answered:
+ * some but not all of its variables are set (`incomplete`), they are set
+ * together with a client secret (`mixed`), or a file they name cannot be read
+ * (`unreadable`) — `EnvDestinationStore`. `XsuaaServiceKeyStore` (3.3.0)
+ * raises it for a service key carrying part of a certificate client only —
+ * not all of `url`, `clientid`, `certificate`, `key` and `certurl`
+ * (`incomplete`). A key with a secret and a whole certificate offers both
+ * and is no error.
+ *
+ * The message is fixed words naming the destination and the variables — never
+ * a value, a path, a file's content or an underlying error: a path may name
+ * the user, and the files hold a certificate and its private key.
+ */
+export class ClientCertificateError extends StoreError {
+  public readonly reason: ClientCertificateProblem;
+  /**
+   * What the refusal is about, never values: env key names
+   * (`EnvDestinationStore`), or a service key's field names
+   * (`XsuaaServiceKeyStore`).
+   */
+  public readonly variables: string[];
+
+  constructor(
+    message: string,
+    reason: ClientCertificateProblem,
+    variables: string[],
+  ) {
+    super(message, STORE_ERROR_CODES.INVALID_CONFIG);
+    this.name = 'ClientCertificateError';
+    this.reason = reason;
+    this.variables = variables;
+    Object.setPrototypeOf(this, ClientCertificateError.prototype);
+  }
+}

@@ -2,6 +2,11 @@
  * Tests for XsuaaServiceKeyParser
  */
 
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { loadServiceKey } from '../../../loaders/abap/serviceKeyLoader';
+import { loadXSUAAServiceKey } from '../../../loaders/xsuaa/xsuaaServiceKeyLoader';
 import { XsuaaServiceKeyParser } from '../../../parsers/xsuaa/XsuaaServiceKeyParser';
 
 describe('XsuaaServiceKeyParser', () => {
@@ -160,5 +165,62 @@ describe('XsuaaServiceKeyParser', () => {
         'Service key does not match XSUAA format',
       );
     });
+  });
+
+  // An x509 client is answered only by XsuaaServiceKeyStore.getClientCertificate:
+  // the parser and the loaders keep their 3.2.0 answers, so no direct
+  // consumer reads a missing `uaa.clientsecret` as a public client.
+  describe('x509 keys keep the 3.2.0 answers', () => {
+    const CHAIN =
+      '-----BEGIN CERTIFICATE-----\r\nMIIBleaf\r\n-----END CERTIFICATE-----\r\n-----BEGIN CERTIFICATE-----\r\nMIIBint\r\n-----END CERTIFICATE-----\r\n';
+    const KEY =
+      '-----BEGIN RSA PRIVATE KEY-----\r\nMIIEkey\r\n-----END RSA PRIVATE KEY-----\r\n';
+    const x509Key = {
+      url: 'https://test.authentication.sap.hana.ondemand.com',
+      clientid: 'sb-x509!t1',
+      certificate: CHAIN,
+      key: KEY,
+      certurl: 'https://test.authentication.cert.sap.hana.ondemand.com',
+      'credential-type': 'x509',
+    };
+    const mixedKey = { ...x509Key, clientsecret: 'the-secret' };
+
+    function writeKey(content: unknown): string {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xsuaa-loader-'));
+      fs.writeFileSync(path.join(dir, 'k.json'), JSON.stringify(content));
+      return dir;
+    }
+
+    it('the parser does not recognise an x509 key', () => {
+      expect(parser.canParse(x509Key)).toBe(false);
+      expect(() => parser.parse(x509Key)).toThrow(
+        'Service key does not match XSUAA format (missing url, clientid, or clientsecret at root level)',
+      );
+    });
+
+    it('loadXSUAAServiceKey answers null for an x509 key', async () => {
+      expect(await loadXSUAAServiceKey('k', writeKey(x509Key))).toBeNull();
+    });
+
+    it('loadServiceKey refuses an x509 key as no supported format', async () => {
+      await expect(loadServiceKey('k', writeKey(x509Key))).rejects.toThrow(
+        'Failed to load service key for destination "k": Service key does not match any supported format.',
+      );
+    });
+
+    it.each([
+      ['loadXSUAAServiceKey', loadXSUAAServiceKey],
+      ['loadServiceKey', loadServiceKey],
+    ])(
+      '%s answers a key with a secret and a certificate as in 3.2.0: the secret client',
+      async (_name, load) => {
+        const result = (await load('k', writeKey(mixedKey))) as any;
+        expect(result.uaa).toEqual({
+          url: mixedKey.url,
+          clientid: mixedKey.clientid,
+          clientsecret: 'the-secret',
+        });
+      },
+    );
   });
 });
