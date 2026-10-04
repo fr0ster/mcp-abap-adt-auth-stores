@@ -3,17 +3,34 @@
  */
 
 import type {
+  IClientCertificate,
   IConfig,
   IConnectionConfig,
   IServiceKeyStore,
 } from '@mcp-abap-adt/interfaces-auth-broker';
 import type { IAuthorizationConfig } from '@mcp-abap-adt/interfaces-auth-sap';
 import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
+import { ClientCertificateError } from '../../errors/StoreErrors';
 import { JsonFileHandler } from '../../utils/JsonFileHandler';
 import {
   readServiceKeyStoreOptions,
   type ServiceKeyStoreOptions,
 } from '../keyStoreOptions';
+
+/** The fields whose presence makes a key carry a client certificate. */
+const CERTIFICATE_FIELDS = ['certificate', 'key'] as const;
+/** Every field of a certificate client, in the order a refusal names them. */
+const CERTIFICATE_CLIENT_FIELDS = [
+  'url',
+  'clientid',
+  'certificate',
+  'key',
+  'certurl',
+] as const;
+
+/** A value stated at all: present and not `''`. */
+const stated = (value: unknown): boolean =>
+  value !== undefined && value !== null && value !== '';
 
 /**
  * XSUAA Service key store implementation
@@ -22,6 +39,17 @@ import {
  * - Flat format: { clientid, clientsecret, url }
  * - With credentials wrapper: { credentials: { clientid, clientsecret, url } }
  * - Nested uaa format: { uaa: { clientid, clientsecret, url } }
+ *
+ * An x509 key (3.3.0) carries `url`, `clientid`, `certificate`, `key` and
+ * `certurl` and no `clientsecret`. Its client is answered only by
+ * `getClientCertificate` — `getAuthorizationConfig` answers `null`, so no
+ * consumer reads the missing secret as a public client. A key carrying both a
+ * client secret and a certificate (`certificate` or `key`) does not say what it
+ * is: both methods refuse it with a `ClientCertificateError` (`mixed`). A
+ * key with a certificate and no secret but missing any of the five fields is
+ * refused by `getClientCertificate` (`incomplete`). The PEM is answered as
+ * given — line endings and chain untouched — and never logged; a refusal
+ * names the key's fields, never a value.
  */
 export class XsuaaServiceKeyStore implements IServiceKeyStore {
   private directory: string;
@@ -108,6 +136,15 @@ export class XsuaaServiceKeyStore implements IServiceKeyStore {
     const uaaClientId = uaa.clientid as string | undefined;
     const uaaClientSecret = uaa.clientsecret as string | undefined;
 
+    // An x509 client is never answered here: an older consumer would read its
+    // missing secret as a public client.
+    if (this.certificateStated(destination, uaa)) {
+      this.log?.debug(
+        `Service key for ${destination} carries a client certificate: no authorization config`,
+      );
+      return null;
+    }
+
     if (!uaaUrl || !uaaClientId || !uaaClientSecret) {
       this.log?.warn(
         `Service key for ${destination} missing required fields (url, clientid, clientsecret)`,
@@ -123,6 +160,69 @@ export class XsuaaServiceKeyStore implements IServiceKeyStore {
       uaaClientId,
       uaaClientSecret,
     };
+  }
+
+  /**
+   * The key's client certificate, when it is an x509 key; `null` for a key
+   * with a client secret, a key with no certificate, or no key file. The PEM
+   * is answered as given. Refused in fixed words naming fields — never a
+   * value — when the key also carries a client secret (`mixed`) or misses
+   * part of the certificate client (`incomplete`).
+   */
+  async getClientCertificate(
+    destination: string,
+  ): Promise<IClientCertificate | null> {
+    const rawData = await JsonFileHandler.load(
+      `${destination}.json`,
+      this.directory,
+    );
+    if (!rawData || typeof rawData !== 'object') return null;
+    let data = rawData as Record<string, unknown>;
+    if (data.credentials && typeof data.credentials === 'object') {
+      data = data.credentials as Record<string, unknown>;
+    }
+    const uaa = (data.uaa as Record<string, unknown>) || data;
+    if (!this.certificateStated(destination, uaa)) return null;
+    const missing = CERTIFICATE_CLIENT_FIELDS.filter(
+      (field) => typeof uaa[field] !== 'string' || uaa[field] === '',
+    );
+    if (missing.length > 0) {
+      throw new ClientCertificateError(
+        `XsuaaServiceKeyStore: the client certificate in the service key of "${destination}" is incomplete: ${missing.join(', ')} missing`,
+        'incomplete',
+        [...missing],
+      );
+    }
+    this.log?.debug(
+      `Client certificate loaded for ${destination} from its service key`,
+    );
+    return {
+      uaaUrl: uaa.url as string,
+      clientId: uaa.clientid as string,
+      certificate: uaa.certificate as string,
+      key: uaa.key as string,
+      certUrl: uaa.certurl as string,
+    };
+  }
+
+  /**
+   * Whether the key carries a client certificate (`certificate` or `key`
+   * stated). One that also carries a client secret is refused.
+   */
+  private certificateStated(
+    destination: string,
+    uaa: Record<string, unknown>,
+  ): boolean {
+    const carried = CERTIFICATE_FIELDS.filter((field) => stated(uaa[field]));
+    if (carried.length === 0) return false;
+    if (typeof uaa.clientsecret === 'string' && uaa.clientsecret !== '') {
+      throw new ClientCertificateError(
+        `XsuaaServiceKeyStore: the service key of "${destination}" carries both a client secret and a client certificate (clientsecret, ${carried.join(', ')}); a client has one or the other`,
+        'mixed',
+        ['clientsecret', ...carried],
+      );
+    }
+    return true;
   }
 
   /**

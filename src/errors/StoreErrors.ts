@@ -109,7 +109,10 @@ export type ClientCertificateProblem = 'incomplete' | 'mixed' | 'unreadable';
  * Error thrown when a destination's client certificate cannot be answered:
  * some but not all of its variables are set (`incomplete`), they are set
  * together with a client secret (`mixed`), or a file they name cannot be read
- * (`unreadable`).
+ * (`unreadable`) — `EnvDestinationStore`. `XsuaaServiceKeyStore` (3.3.0)
+ * raises it for a service key: one carrying both a `clientsecret` and a
+ * certificate (`mixed`), or a certificate without all of `url`, `clientid`,
+ * `certificate`, `key` and `certurl` (`incomplete`).
  *
  * The message is fixed words naming the destination and the variables — never
  * a value, a path, a file's content or an underlying error: a path may name
@@ -117,7 +120,11 @@ export type ClientCertificateProblem = 'incomplete' | 'mixed' | 'unreadable';
  */
 export class ClientCertificateError extends StoreError {
   public readonly reason: ClientCertificateProblem;
-  /** The variables the refusal is about (env key names, never values). */
+  /**
+   * What the refusal is about, never values: env key names
+   * (`EnvDestinationStore`), or a service key's field names
+   * (`XsuaaServiceKeyStore`).
+   */
   public readonly variables: string[];
 
   constructor(

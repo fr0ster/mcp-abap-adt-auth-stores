@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-10-05
+
+Client certificates: an XSUAA x509 service key, and a certificate destination
+in an `.env` file, answer `IServiceKeyStore.getClientCertificate`
+(`@mcp-abap-adt/interfaces-auth-broker` 1.2.0). Additive: a store, a file or a
+variables map written for 3.2.0 answers exactly as before.
+
+### Added
+
+- **`XsuaaServiceKeyStore.getClientCertificate(destination)`.** A key — bare or
+  in a `credentials` wrapper — carrying `url`, `clientid`, `certificate`, `key`
+  and `certurl` and no `clientsecret` is an x509 key (what XSUAA issues for
+  `{"credential-type": "x509"}`): it answers
+  `{ uaaUrl, clientId, certificate, key, certUrl }`, the PEM as given (CRLF and
+  chains untouched). `getAuthorizationConfig` answers `null` for it, so no
+  consumer reads its missing secret as a public client. A key with a
+  `clientsecret` answers `null` and everything else as before. A key carrying
+  both a `clientsecret` and a `certificate` or `key` is refused by every
+  client-reading method with a `ClientCertificateError` (`mixed`); a
+  certificate without all five fields by `getClientCertificate` (`incomplete`),
+  naming the missing fields. No log line or refusal carries a value of the key.
+- **`XsuaaServiceKeyParser` (`loadServiceKey`, `loadXSUAAServiceKey`) reads x509
+  keys**: normalised to `{ uaa: { url, clientid, certificate, key, certurl } }`
+  — no `clientsecret` invented. A key with both a secret and a certificate is
+  refused in fixed words. `AbapServiceKeyStore` and its parser are unchanged.
+- **`EnvDestinationStore.getClientCertificate(destination)`** and three means
+  of its own, the exported `CertificateField`: `uaaClientCertPath`,
+  `uaaClientKeyPath`, `uaaCertUrl` — two paths and a URL, never PEM. Variables:
+  `SAP_UAA_CLIENT_CERT_PATH`, `SAP_UAA_CLIENT_KEY_PATH`, `SAP_UAA_CERT_URL`
+  (`ABAP_DESTINATION_VARS`); `XSUAA_UAA_CLIENT_CERT_PATH`,
+  `XSUAA_UAA_CLIENT_KEY_PATH`, `XSUAA_UAA_CERT_URL` (`XSUAA_DESTINATION_VARS`).
+  Which variables are set decides, no file read to decide: none → as before;
+  all three and no client secret variable → a certificate client
+  (`getAuthorizationConfig` `null`; `getClientCertificate` reads the two
+  files, with the file's own UAA URL and client id); some but not all, or any
+  with the client secret variable → both methods throw. The fallback's
+  certificate is asked only when the file states no client — no client secret,
+  no client id, none of the three. `setDestination` writes them; writing a
+  certificate client removes the client secret variable, writing a secret
+  client removes the three. The three keys are optional in
+  `DestinationVariables`: a custom map without them supports no certificate
+  destination (`null`; a certificate write refused with `InvalidConfigError`),
+  and a secret write leaves an unmapped certificate line in the file as it is.
+- **`ClientCertificateError`** (code `INVALID_CONFIG`; `reason`: `incomplete`,
+  `mixed` or `unreadable`; `variables`: env keys or service key fields) and
+  its `ClientCertificateProblem` type. Fixed words naming the destination and
+  those names — never a value, a path, a file's content or a certificate.
+
+### Changed
+
+- `@mcp-abap-adt/interfaces-auth-broker` `^1.2.0` (`IClientCertificate`, the
+  optional `IServiceKeyStore.getClientCertificate`).
+
 ## [3.2.0] - 2026-10-02
 
 ### Changed

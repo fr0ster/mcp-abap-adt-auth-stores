@@ -161,4 +161,70 @@ describe('XsuaaServiceKeyParser', () => {
       );
     });
   });
+  describe('x509 keys', () => {
+    const CHAIN =
+      '-----BEGIN CERTIFICATE-----\r\nMIIBleafMARKERq7\r\n-----END CERTIFICATE-----\r\n-----BEGIN CERTIFICATE-----\r\nMIIBintMARKERq7\r\n-----END CERTIFICATE-----\r\n';
+    const KEY =
+      '-----BEGIN RSA PRIVATE KEY-----\r\nMIIEkeyMARKERq7\r\n-----END RSA PRIVATE KEY-----\r\n';
+    const x509Key = {
+      url: 'https://test.authentication.sap.hana.ondemand.com',
+      clientid: 'sb-x509!t1',
+      certificate: CHAIN,
+      key: KEY,
+      certurl: 'https://test.authentication.cert.sap.hana.ondemand.com',
+      'credential-type': 'x509',
+    };
+
+    it('recognises a key with url, clientid, certificate, key and certurl and no clientsecret', () => {
+      expect(parser.canParse(x509Key)).toBe(true);
+    });
+
+    it.each(['certificate', 'key', 'certurl'])(
+      'does not recognise an x509 key without %s',
+      (field) => {
+        const partial: Record<string, unknown> = { ...x509Key };
+        delete partial[field];
+        expect(parser.canParse(partial)).toBe(false);
+      },
+    );
+
+    it('normalises an x509 key without a client secret, PEM unchanged', () => {
+      const result = parser.parse(x509Key) as any;
+      expect(result.uaa).toEqual({
+        url: x509Key.url,
+        clientid: x509Key.clientid,
+        certificate: CHAIN,
+        key: KEY,
+        certurl: x509Key.certurl,
+      });
+      expect('clientsecret' in result.uaa).toBe(false);
+    });
+
+    it('normalises a secret key exactly as before: no certificate fields', () => {
+      const result = parser.parse({
+        url: x509Key.url,
+        clientid: 'c',
+        clientsecret: 's',
+        certurl: x509Key.certurl,
+      }) as any;
+      expect(result.uaa).toEqual({
+        url: x509Key.url,
+        clientid: 'c',
+        clientsecret: 's',
+      });
+    });
+
+    it('refuses a key with both a client secret and a certificate in fixed words', () => {
+      const mixed = { ...x509Key, clientsecret: 'the-secret' };
+      let message = '';
+      try {
+        parser.parse(mixed);
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message).toBe(
+        'Service key carries both a client secret and a client certificate; a client has one or the other',
+      );
+    });
+  });
 });
