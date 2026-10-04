@@ -263,6 +263,7 @@ describe('XsuaaServiceKeyStore (x509 keys)', () => {
       expect(line).not.toContain('BEGIN');
     }
   });
+
   it('behind an EnvDestinationStore whose file states no client, the x509 key answers', async () => {
     const keys = writeKey({ credentials: x509Key });
     const envDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xsuaa-x509-env-'));

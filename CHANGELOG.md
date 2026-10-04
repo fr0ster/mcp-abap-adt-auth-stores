@@ -11,8 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Client certificates: an XSUAA x509 service key, and a certificate destination
 in an `.env` file, answer `IServiceKeyStore.getClientCertificate`
-(`@mcp-abap-adt/interfaces-auth-broker` 1.2.0). Additive: a store, a file or a
-variables map written for 3.2.0 answers exactly as before.
+(`@mcp-abap-adt/interfaces-auth-broker` 1.2.0). A secret key, a file without
+the certificate variables and a variables map written for 3.2.0 answer as
+before; a key carrying both a secret and a certificate is now refused (see
+*Changed*).
 
 ### Added
 
@@ -28,10 +30,10 @@ variables map written for 3.2.0 answers exactly as before.
   client-reading method with a `ClientCertificateError` (`mixed`); a
   certificate without all five fields by `getClientCertificate` (`incomplete`),
   naming the missing fields. No log line or refusal carries a value of the key.
-- **`XsuaaServiceKeyParser` (`loadServiceKey`, `loadXSUAAServiceKey`) reads x509
-  keys**: normalised to `{ uaa: { url, clientid, certificate, key, certurl } }`
-  — no `clientsecret` invented. A key with both a secret and a certificate is
-  refused in fixed words. `AbapServiceKeyStore` and its parser are unchanged.
+  The loaders (`loadServiceKey`, `loadXSUAAServiceKey`) and
+  `XsuaaServiceKeyParser` do not read x509 keys — they answer as in 3.2.0
+  (`null`, or no supported format), so no direct consumer reads a missing
+  `clientsecret` as a public client. `AbapServiceKeyStore` is unchanged.
 - **`EnvDestinationStore.getClientCertificate(destination)`** and three means
   of its own, the exported `CertificateField`: `uaaClientCertPath`,
   `uaaClientKeyPath`, `uaaCertUrl` — two paths and a URL, never PEM. Variables:
@@ -57,6 +59,11 @@ variables map written for 3.2.0 answers exactly as before.
 
 ### Changed
 
+- **`XsuaaServiceKeyStore` refuses a key carrying both a `clientsecret` and a
+  `certificate` or `key`**: `getAuthorizationConfig`, `getServiceKey` and
+  `getClientCertificate` throw a `ClientCertificateError` (`mixed`). 3.2.0
+  answered such a key's secret client; the key does not say which client it
+  is. (The loaders still answer its secret client, as in 3.2.0.)
 - `@mcp-abap-adt/interfaces-auth-broker` `^1.2.0` (`IClientCertificate`, the
   optional `IServiceKeyStore.getClientCertificate`).
 

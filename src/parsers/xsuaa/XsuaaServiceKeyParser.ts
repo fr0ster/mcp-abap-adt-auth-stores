@@ -9,20 +9,9 @@
  *   "tenantmode": "shared",
  *   ...
  * }
- *
- * or an x509 key (3.3.0): `url`, `clientid`, `certificate`, `key` and
- * `certurl`, and no `clientsecret`. A key carrying both a client secret and a
- * client certificate is refused: it does not say what it is.
  */
 
 import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
-
-const nonEmpty = (value: unknown): value is string =>
-  typeof value === 'string' && value.length > 0;
-
-/** A value stated at all: present and not `''`. */
-const stated = (value: unknown): boolean =>
-  value !== undefined && value !== null && value !== '';
 
 /**
  * Parser for direct XSUAA service key format from BTP
@@ -40,9 +29,7 @@ export class XsuaaServiceKeyParser {
   /**
    * Check if this parser can handle the given raw service key data
    * @param rawData Raw JSON data from service key file
-   * @returns true if data has direct XSUAA fields without nested uaa object:
-   *   url and clientid, and either clientsecret or all of certificate, key and
-   *   certurl (an x509 key)
+   * @returns true if data has direct XSUAA fields (url, clientid, clientsecret) without nested uaa object
    */
   canParse(rawData: unknown): boolean {
     if (!rawData || typeof rawData !== 'object' || Array.isArray(rawData)) {
@@ -66,14 +53,10 @@ export class XsuaaServiceKeyParser {
       typeof data.clientid === 'string' && data.clientid.length > 0;
     const hasClientSecret =
       typeof data.clientsecret === 'string' && data.clientsecret.length > 0;
-    const hasCertificate =
-      nonEmpty(data.certificate) &&
-      nonEmpty(data.key) &&
-      nonEmpty(data.certurl);
-    const result = hasUrl && hasClientId && (hasClientSecret || hasCertificate);
+    const result = hasUrl && hasClientId && hasClientSecret;
 
     this.log?.debug(
-      `canParse check: url(${hasUrl}), clientid(${hasClientId}), clientsecret(${hasClientSecret}), certificate(${hasCertificate}), result(${result})`,
+      `canParse check: url(${hasUrl}), clientid(${hasClientId}), clientsecret(${hasClientSecret}), result(${result})`,
     );
     return result;
   }
@@ -103,27 +86,11 @@ export class XsuaaServiceKeyParser {
       );
     }
 
-    const hasClientSecret = nonEmpty(data.clientsecret);
-    if (hasClientSecret && (stated(data.certificate) || stated(data.key))) {
-      // Fixed words: the key's values are a secret and a private key.
-      throw new Error(
-        'Service key carries both a client secret and a client certificate; a client has one or the other',
-      );
-    }
-
-    // After canParse, we know url and clientid exist and are strings, and
-    // either clientsecret or certificate, key and certurl do.
+    // After canParse, we know url, clientid, and clientsecret exist and are strings
     const uaaUrl = typeof data.url === 'string' ? data.url : '';
     const clientId = typeof data.clientid === 'string' ? data.clientid : '';
-    // An x509 client carries no secret: none is invented, so the result never
-    // reads as a public client. The PEM is passed on as given.
-    const client = hasClientSecret
-      ? { clientsecret: data.clientsecret as string }
-      : {
-          certificate: data.certificate as string,
-          key: data.key as string,
-          certurl: data.certurl as string,
-        };
+    const clientSecret =
+      typeof data.clientsecret === 'string' ? data.clientsecret : '';
 
     // Normalize to standard format
     // For authorization (OAuth2 authorize endpoint), use 'url' (not 'apiurl')
@@ -132,7 +99,7 @@ export class XsuaaServiceKeyParser {
       uaa: {
         url: uaaUrl,
         clientid: clientId,
-        ...client,
+        clientsecret: clientSecret,
       },
       // Preserve abap.url if present
       abap: data.abap,

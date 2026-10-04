@@ -147,7 +147,7 @@ export class XsuaaServiceKeyStore implements IServiceKeyStore {
 
     if (!uaaUrl || !uaaClientId || !uaaClientSecret) {
       this.log?.warn(
-        `Service key for ${destination} missing required fields (url, clientid, clientsecret)`,
+        `Service key for ${destination} missing required fields (url, clientid, clientsecret); an x509 key (certificate, key, certurl) is answered by getClientCertificate`,
       );
       return null;
     }

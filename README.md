@@ -425,7 +425,7 @@ Every directory is a constructor parameter; a file store reads and writes only `
 }
 ```
 
-**XSUAA x509 Service Key** (3.3.0; direct or in a `credentials` wrapper — no `clientsecret`):
+**XSUAA x509 Service Key** (3.3.0, read by `XsuaaServiceKeyStore` only; direct or in a `credentials` wrapper — no `clientsecret`):
 ```json
 {
   "url": "https://...authentication...hana.ondemand.com",
@@ -554,7 +554,7 @@ const abapKey = await loadServiceKey('TRIAL', '/path/to/service-keys');
 const xsuaaKey = await loadXSUAAServiceKey('mcp', '/path/to/service-keys');
 ```
 
-Both normalise an XSUAA key to `{ uaa: { url, clientid, clientsecret }, … }`; an x509 key (3.3.0) to `{ uaa: { url, clientid, certificate, key, certurl }, … }` — no `clientsecret` is invented, and the PEM is passed on as given. A key carrying both a client secret and a certificate is refused in fixed words.
+The loaders do not read x509 keys: for one, `loadXSUAAServiceKey` answers `null` and `loadServiceKey` refuses it as no supported format, exactly as in 3.2.0 — their result has no place for a certificate, and a missing `clientsecret` would read as a public client. Read an x509 key with `XsuaaServiceKeyStore.getClientCertificate` (see *Client certificates*).
 
 ## Debug Logging
 
