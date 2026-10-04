@@ -100,7 +100,7 @@ new AbapServiceKeyStore(dir, log); // the 3.0.0 form: no grant answered
 
 ### Client certificates (3.3.0)
 
-An XSUAA instance whose `oauth2-configuration.credential-types` includes `x509` issues keys created with `{"credential-type": "x509"}`: such a key carries `url`, `clientid`, `certificate` (PEM, possibly a chain, leaf first), `key` (PEM) and `certurl` (the mTLS host of the authorization server), and **no `clientsecret`**. `IServiceKeyStore.getClientCertificate(destination)` (`@mcp-abap-adt/interfaces-auth-broker` 1.2.0, optional) answers that client:
+An XSUAA instance whose `oauth2-configuration.credential-types` includes `x509` issues keys created with `{"credential-type": "x509"}`: such a key carries `url`, `clientid`, `certificate` (PEM, possibly a chain, leaf first), `key` (PEM) and `certurl` (the mTLS host of the authorization server), and either **no `clientsecret`** (as our BTP trial issued it, measured 2026-10-04) or a `clientsecret` too (a shape SAP documents for x509 credentials — [SAP Cloud SDK, mTLS](https://sap.github.io/cloud-sdk/docs/java/features/connectivity/mtls) — where the certificate is used in place of the secret). `IServiceKeyStore.getClientCertificate(destination)` (`@mcp-abap-adt/interfaces-auth-broker` 1.2.0, optional) answers the certificate client:
 
 ```typescript
 const store = new XsuaaServiceKeyStore('/path/to/service-keys');
@@ -109,10 +109,10 @@ await store.getClientCertificate('X509');
 // { uaaUrl: key.url, clientId: key.clientid, certificate, key, certUrl: key.certurl }
 ```
 
-- **`getAuthorizationConfig` answers `null` for an x509 key.** Its missing secret would otherwise read as a public client to a consumer that does not know certificates; the whole certificate client comes only from `getClientCertificate`.
-- **A key with a `clientsecret`** answers `getClientCertificate` with `null` and everything else exactly as before — also when it names a `certurl`.
-- **A key carrying both a `clientsecret` and a `certificate` or `key`** does not say what it is: `getAuthorizationConfig`, `getServiceKey` and `getClientCertificate` throw a `ClientCertificateError` (`reason: 'mixed'`).
-- **A certificate without all five fields** (no secret) is refused by `getClientCertificate` as `incomplete`, naming the missing fields; `getAuthorizationConfig` answers `null`, as for any key without a secret.
+- **An x509 key without a secret: `getAuthorizationConfig` answers `null`.** Its missing secret would otherwise read as a public client to a consumer that does not know certificates; the whole certificate client comes only from `getClientCertificate`.
+- **An x509 key with a secret offers both clients.** `getAuthorizationConfig` and `getServiceKey` answer the secret client exactly as 3.2.0 did, and `getClientCertificate` the certificate client. The store does not choose — `credential-type` is not read; SAP says the certificate is used in place of the secret for such a binding, and the consumer chooses (the broker's client-authentication strategy).
+- **A key with neither `certificate` nor `key`** answers `getClientCertificate` with `null` and everything else exactly as before — also when it names a `certurl`.
+- **Part of a certificate client only** — one of `certificate` / `key`, or a missing `certurl`, `url` or `clientid` — is refused by `getClientCertificate` as `incomplete` (`ClientCertificateError`), naming the missing fields; `getAuthorizationConfig` answers as in 3.2.0 (the secret client, or `null` without a secret).
 - **The PEM is answered as given** — line endings (CRLF included) and chains untouched; the authentication provider checks it. It is never logged, and a refusal names the key's fields, never a value.
 - `getConnectionConfig` answers an x509 key exactly as a secret key (`serviceUrl`, `authType: 'jwt'`, `sapClient`, `language`, the stated `grantType`).
 - `AbapServiceKeyStore` is unchanged: an ABAP service key carries no client certificate, and the store has no `getClientCertificate`.
@@ -425,7 +425,7 @@ Every directory is a constructor parameter; a file store reads and writes only `
 }
 ```
 
-**XSUAA x509 Service Key** (3.3.0, read by `XsuaaServiceKeyStore` only; direct or in a `credentials` wrapper — no `clientsecret`):
+**XSUAA x509 Service Key** (3.3.0, read by `XsuaaServiceKeyStore` only; direct or in a `credentials` wrapper; with or without a `clientsecret`):
 ```json
 {
   "url": "https://...authentication...hana.ondemand.com",
@@ -487,9 +487,9 @@ try {
 - **`InvalidConfigError`** - Required configuration fields missing (includes `missingFields` array)
 - **`StorageError`** - File read, write or permission error (includes `operation` and `cause`); a session file that exists but cannot be read raises it — only a missing file is `null`
 - **`RefusedFieldsError`** (code `INVALID_CONFIG`) - A write carried fields the store does not hold: means given to a session store, a secret given to `EnvDestinationStore` (includes `fields`; the message names fields, never values)
-- **`ClientCertificateError`** (code `INVALID_CONFIG`, 3.3.0) - A destination's client certificate cannot be answered (includes `reason`: `incomplete`, `mixed` or `unreadable`, and `variables`: the env keys — `EnvDestinationStore` — or the service key's fields — `XsuaaServiceKeyStore`). The message is fixed words naming the destination and those names — never a value, a path, a file's content or a certificate.
+- **`ClientCertificateError`** (code `INVALID_CONFIG`, 3.3.0) - A destination's client certificate cannot be answered (includes `reason`: `incomplete`, `mixed` or `unreadable`, and `variables`: the env keys — `EnvDestinationStore`, all three reasons — or the service key's fields — `XsuaaServiceKeyStore`, `incomplete` only). The message is fixed words naming the destination and those names — never a value, a path, a file's content or a certificate.
 
-**Note**: Most errors result in `null` return values rather than exceptions. Only fatal errors (like JSON parsing failures) throw exceptions — and a client certificate that is mixed with a secret, incomplete or unreadable, which throws a `ClientCertificateError` rather than answer a client the destination does not state.
+**Note**: Most errors result in `null` return values rather than exceptions. Only fatal errors (like JSON parsing failures) throw exceptions — and a client certificate that is incomplete, unreadable or (in an `.env` file) mixed with a secret, which throws a `ClientCertificateError` rather than answer a client the destination does not state.
 
 ## File Handlers
 
@@ -554,7 +554,7 @@ const abapKey = await loadServiceKey('TRIAL', '/path/to/service-keys');
 const xsuaaKey = await loadXSUAAServiceKey('mcp', '/path/to/service-keys');
 ```
 
-The loaders do not read x509 keys: for one, `loadXSUAAServiceKey` answers `null` and `loadServiceKey` refuses it as no supported format, exactly as in 3.2.0 — their result has no place for a certificate, and a missing `clientsecret` would read as a public client. Read an x509 key with `XsuaaServiceKeyStore.getClientCertificate` (see *Client certificates*).
+The loaders do not read client certificates: for an x509 key without a secret, `loadXSUAAServiceKey` answers `null` and `loadServiceKey` refuses it as no supported format, and for one with a secret both answer the secret client — exactly as in 3.2.0 — their result has no place for a certificate, and a missing `clientsecret` would read as a public client. Read an x509 key with `XsuaaServiceKeyStore.getClientCertificate` (see *Client certificates*).
 
 ## Debug Logging
 

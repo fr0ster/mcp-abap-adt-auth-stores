@@ -191,33 +191,78 @@ describe('XsuaaServiceKeyStore (x509 keys)', () => {
     expect(await store.getClientCertificate(destination)).toBeNull();
   });
 
+  // SAP documents x509 XSUAA credentials that carry the secret too
+  // (https://sap.github.io/cloud-sdk/docs/java/features/connectivity/mtls):
+  // such a key offers both clients, and the consumer chooses.
+  it("a key in SAP's documented shape offers both: the secret client as in 3.2.0, and the certificate", async () => {
+    const both = {
+      credentials: {
+        'credential-type': 'x509',
+        clientid: x509Key.clientid,
+        clientsecret: 'the-secret',
+        certificate: CHAIN,
+        key: KEY,
+        certurl: x509Key.certurl,
+        url: x509Key.url,
+        xsappname: 'demo-xsapp',
+      },
+    };
+    const store = new XsuaaServiceKeyStore(writeKey(both));
+    const secretClient = {
+      uaaUrl: x509Key.url,
+      uaaClientId: x509Key.clientid,
+      uaaClientSecret: 'the-secret',
+    };
+    expect(await store.getAuthorizationConfig(destination)).toEqual(
+      secretClient,
+    );
+    expect(await store.getServiceKey(destination)).toEqual({
+      ...secretClient,
+      serviceUrl: undefined,
+      authType: 'jwt',
+      sapClient: undefined,
+      language: undefined,
+    });
+    expect(await store.getClientCertificate(destination)).toEqual(
+      expectedCertificate,
+    );
+  });
+
   it.each([
-    ['certificate and key', {}],
-    ['certificate only', { key: undefined }],
-    ['key only', { certificate: undefined }],
+    ['certificate only, with a secret', { key: undefined }, true],
+    ['key only, with a secret', { certificate: undefined }, true],
+    ['certificate only, no secret', { key: undefined }, false],
+    ['key only, no secret', { certificate: undefined }, false],
   ])(
-    'a key with a secret and a client certificate (%s) is refused by both methods in fixed words',
-    async (_label, drop) => {
-      const mixed = { ...x509Key, clientsecret: 'the-secret', ...drop };
-      const store = new XsuaaServiceKeyStore(writeKey({ credentials: mixed }));
-      for (const call of [
-        () => store.getClientCertificate(destination),
-        () => store.getAuthorizationConfig(destination),
-      ]) {
-        const error = await call().then(
-          () => undefined,
-          (e: unknown) => e,
-        );
-        expect(error).toBeInstanceOf(ClientCertificateError);
-        const refusal = error as ClientCertificateError;
-        expect(refusal.reason).toBe('mixed');
-        expect(refusal.message).toContain(
-          'carries both a client secret and a client certificate',
-        );
-        expect(refusal.variables[0]).toBe('clientsecret');
-        expect(refusal.message).not.toContain(MARKER);
-        expect(refusal.message).not.toContain('the-secret');
-      }
+    'a key with half a certificate (%s) is refused as incomplete; its secret client is answered as in 3.2.0',
+    async (_label, drop, withSecret) => {
+      const half = {
+        ...x509Key,
+        ...(withSecret ? { clientsecret: 'the-secret' } : {}),
+        ...drop,
+      };
+      const store = new XsuaaServiceKeyStore(writeKey({ credentials: half }));
+      const error = await store.getClientCertificate(destination).then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+      expect(error).toBeInstanceOf(ClientCertificateError);
+      const refusal = error as ClientCertificateError;
+      expect(refusal.reason).toBe('incomplete');
+      expect(refusal.variables).toEqual([
+        'certificate' in drop ? 'certificate' : 'key',
+      ]);
+      expect(refusal.message).not.toContain(MARKER);
+      expect(refusal.message).not.toContain('the-secret');
+      expect(await store.getAuthorizationConfig(destination)).toEqual(
+        withSecret
+          ? {
+              uaaUrl: x509Key.url,
+              uaaClientId: x509Key.clientid,
+              uaaClientSecret: 'the-secret',
+            }
+          : null,
+      );
     },
   );
 

@@ -41,13 +41,15 @@ const stated = (value: unknown): boolean =>
  * - Nested uaa format: { uaa: { clientid, clientsecret, url } }
  *
  * An x509 key (3.3.0) carries `url`, `clientid`, `certificate`, `key` and
- * `certurl` and no `clientsecret`. Its client is answered only by
- * `getClientCertificate` — `getAuthorizationConfig` answers `null`, so no
- * consumer reads the missing secret as a public client. A key carrying both a
- * client secret and a certificate (`certificate` or `key`) does not say what it
- * is: both methods refuse it with a `ClientCertificateError` (`mixed`). A
- * key with a certificate and no secret but missing any of the five fields is
- * refused by `getClientCertificate` (`incomplete`). The PEM is answered as
+ * `certurl`; `getClientCertificate` answers that client. Without a
+ * `clientsecret`, `getAuthorizationConfig` answers `null`, so no consumer
+ * reads the missing secret as a public client. With one — a shape SAP
+ * documents for `credential-type: x509` — the key offers both clients:
+ * `getAuthorizationConfig` and `getServiceKey` answer the secret client
+ * exactly as 3.2.0 did, `getClientCertificate` the certificate client, and
+ * the consumer chooses (`credential-type` is not read). A key carrying part
+ * of a certificate client only is refused by `getClientCertificate`
+ * (`incomplete`), naming the missing fields. The PEM is answered as
  * given — line endings and chain untouched — and never logged; a refusal
  * names the key's fields, never a value.
  */
@@ -133,15 +135,10 @@ export class XsuaaServiceKeyStore implements IServiceKeyStore {
     const uaaClientId = uaa.clientid as string | undefined;
     const uaaClientSecret = uaa.clientsecret as string | undefined;
 
-    // An x509 client is never answered here: an older consumer would read its
-    // missing secret as a public client.
-    if (this.certificateStated(destination, uaa)) {
-      this.log?.debug(
-        `Service key for ${destination} carries a client certificate: no authorization config`,
-      );
-      return null;
-    }
-
+    // As in 3.2.0: only a key with a secret has a client here. An x509 key
+    // without one answers null — never a public client — and its certificate
+    // is answered by getClientCertificate alone. A key offering both answers
+    // its secret client here; which one is used is the consumer's choice.
     if (!uaaUrl || !uaaClientId || !uaaClientSecret) {
       this.log?.warn(
         `Service key for ${destination} missing required fields (url, clientid, clientsecret); an x509 key (certificate, key, certurl) is answered by getClientCertificate`,
@@ -160,11 +157,11 @@ export class XsuaaServiceKeyStore implements IServiceKeyStore {
   }
 
   /**
-   * The key's client certificate, when it is an x509 key; `null` for a key
-   * with a client secret, a key with no certificate, or no key file. The PEM
-   * is answered as given. Refused in fixed words naming fields — never a
-   * value — when the key also carries a client secret (`mixed`) or misses
-   * part of the certificate client (`incomplete`).
+   * The key's client certificate, whether or not the key also carries a
+   * client secret; `null` for a key with no certificate (neither `certificate`
+   * nor `key`), or no key file. The PEM is answered as given. Refused in fixed
+   * words naming fields — never a value — when the key carries part of a
+   * certificate client only (`incomplete`).
    */
   async getClientCertificate(
     destination: string,
@@ -176,7 +173,8 @@ export class XsuaaServiceKeyStore implements IServiceKeyStore {
       data = data.credentials as Record<string, unknown>;
     }
     const uaa = (data.uaa as Record<string, unknown>) || data;
-    if (!this.certificateStated(destination, uaa)) return null;
+    // `credential-type` is not read: the fields say what the key offers.
+    if (!CERTIFICATE_FIELDS.some((field) => stated(uaa[field]))) return null;
     const missing = CERTIFICATE_CLIENT_FIELDS.filter(
       (field) => typeof uaa[field] !== 'string' || uaa[field] === '',
     );
@@ -215,26 +213,6 @@ export class XsuaaServiceKeyStore implements IServiceKeyStore {
       this.log?.error(message);
       throw new ParseError(message);
     }
-  }
-
-  /**
-   * Whether the key carries a client certificate (`certificate` or `key`
-   * stated). One that also carries a client secret is refused.
-   */
-  private certificateStated(
-    destination: string,
-    uaa: Record<string, unknown>,
-  ): boolean {
-    const carried = CERTIFICATE_FIELDS.filter((field) => stated(uaa[field]));
-    if (carried.length === 0) return false;
-    if (typeof uaa.clientsecret === 'string' && uaa.clientsecret !== '') {
-      throw new ClientCertificateError(
-        `XsuaaServiceKeyStore: the service key of "${destination}" carries both a client secret and a client certificate (clientsecret, ${carried.join(', ')}); a client has one or the other`,
-        'mixed',
-        ['clientsecret', ...carried],
-      );
-    }
-    return true;
   }
 
   /**

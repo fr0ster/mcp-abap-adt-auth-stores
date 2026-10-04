@@ -11,25 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Client certificates: an XSUAA x509 service key, and a certificate destination
 in an `.env` file, answer `IServiceKeyStore.getClientCertificate`
-(`@mcp-abap-adt/interfaces-auth-broker` 1.2.0). A secret key, a file without
-the certificate variables and a variables map written for 3.2.0 answer as
-before; a key carrying both a secret and a certificate is now refused (see
-*Changed*).
+(`@mcp-abap-adt/interfaces-auth-broker` 1.2.0). Every 3.2.0 answer of
+`XsuaaServiceKeyStore` is kept — a key with a secret answers its secret client,
+also when it carries a certificate too; a file without the certificate
+variables and a variables map written for 3.2.0 answer as before.
 
 ### Added
 
 - **`XsuaaServiceKeyStore.getClientCertificate(destination)`.** A key — bare or
   in a `credentials` wrapper — carrying `url`, `clientid`, `certificate`, `key`
-  and `certurl` and no `clientsecret` is an x509 key (what XSUAA issues for
-  `{"credential-type": "x509"}`): it answers
+  and `certurl` (what XSUAA issues for `{"credential-type": "x509"}`) answers
   `{ uaaUrl, clientId, certificate, key, certUrl }`, the PEM as given (CRLF and
-  chains untouched). `getAuthorizationConfig` answers `null` for it, so no
-  consumer reads its missing secret as a public client. A key with a
-  `clientsecret` answers `null` and everything else as before. A key carrying
-  both a `clientsecret` and a `certificate` or `key` is refused by every
-  client-reading method with a `ClientCertificateError` (`mixed`); a
-  certificate without all five fields by `getClientCertificate` (`incomplete`),
-  naming the missing fields. No log line or refusal carries a value of the key.
+  chains untouched). Both shapes are read: without a `clientsecret` (as our
+  BTP trial issued it), `getAuthorizationConfig` answers `null`, so no consumer
+  reads the missing secret as a public client; with one (a shape SAP
+  documents for x509 credentials), the key offers both clients —
+  `getAuthorizationConfig` and `getServiceKey` answer the secret client exactly
+  as in 3.2.0, and such a key now **also** answers `getClientCertificate`. The
+  consumer chooses which to use; `credential-type` is not read. A key with no
+  `certificate` and no `key` answers `null`. A key carrying part of a
+  certificate client only (one of `certificate` / `key`, or no `certurl`) is
+  refused by `getClientCertificate` with a `ClientCertificateError`
+  (`incomplete`), naming the missing fields; its other answers are 3.2.0's. No log line or refusal carries a value of the key.
   The loaders (`loadServiceKey`, `loadXSUAAServiceKey`) and
   `XsuaaServiceKeyParser` do not read x509 keys — they answer as in 3.2.0
   (`null`, or no supported format), so no direct consumer reads a missing
@@ -76,11 +79,6 @@ before; a key carrying both a secret and a certificate is now refused (see
 
 ### Changed
 
-- **`XsuaaServiceKeyStore` refuses a key carrying both a `clientsecret` and a
-  `certificate` or `key`**: `getAuthorizationConfig`, `getServiceKey` and
-  `getClientCertificate` throw a `ClientCertificateError` (`mixed`). 3.2.0
-  answered such a key's secret client; the key does not say which client it
-  is. (The loaders still answer its secret client, as in 3.2.0.)
 - `@mcp-abap-adt/interfaces-auth-broker` `^1.2.0` (`IClientCertificate`, the
   optional `IServiceKeyStore.getClientCertificate`).
 

@@ -110,9 +110,10 @@ export type ClientCertificateProblem = 'incomplete' | 'mixed' | 'unreadable';
  * some but not all of its variables are set (`incomplete`), they are set
  * together with a client secret (`mixed`), or a file they name cannot be read
  * (`unreadable`) — `EnvDestinationStore`. `XsuaaServiceKeyStore` (3.3.0)
- * raises it for a service key: one carrying both a `clientsecret` and a
- * certificate (`mixed`), or a certificate without all of `url`, `clientid`,
- * `certificate`, `key` and `certurl` (`incomplete`).
+ * raises it for a service key carrying part of a certificate client only —
+ * not all of `url`, `clientid`, `certificate`, `key` and `certurl`
+ * (`incomplete`). A key with a secret and a whole certificate offers both
+ * and is no error.
  *
  * The message is fixed words naming the destination and the variables — never
  * a value, a path, a file's content or an underlying error: a path may name
