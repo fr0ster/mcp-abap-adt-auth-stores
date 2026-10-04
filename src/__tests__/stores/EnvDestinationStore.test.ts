@@ -8,18 +8,22 @@
  * to, field by field. It answers means only — never a secret — and has a
  * write method of its own, outside the read-only contract.
  */
-import * as fs from 'node:fs';
+// the module object itself, so a spy on it sees every reader's call
+import nodeFs, * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type {
+  IClientCertificate,
   IConfig,
   IConnectionConfig,
   IServiceKeyStore,
 } from '@mcp-abap-adt/interfaces-auth-broker';
 import type { IAuthorizationConfig } from '@mcp-abap-adt/interfaces-auth-sap';
 import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
+import { ClientCertificateError } from '../../errors/StoreErrors';
 import {
   ABAP_DESTINATION_VARS,
+  type DestinationVariables,
   EnvDestinationStore,
   XSUAA_DESTINATION_VARS,
 } from '../../stores/destination/EnvDestinationStore';
@@ -525,5 +529,405 @@ describe('EnvDestinationStore', () => {
     });
     await store.getServiceKey('D');
     expect(lines.join('\n')).not.toContain('SENTINEL');
+  });
+
+  describe('a client certificate (3.3.0)', () => {
+    const CERT_PEM = [
+      '-----BEGIN CERTIFICATE-----',
+      'SENTINELcertBODYleaf==',
+      '-----END CERTIFICATE-----',
+      '-----BEGIN CERTIFICATE-----',
+      'SENTINELcertBODYchain==',
+      '-----END CERTIFICATE-----',
+      '',
+    ].join('\r\n');
+    const KEY_PEM = [
+      '-----BEGIN PRIVATE KEY-----',
+      'SENTINELkeyBODY==',
+      '-----END PRIVATE KEY-----',
+      '',
+    ].join('\n');
+    const UAA_URL = 'https://sub.authentication.example';
+    const CERT_URL = 'https://sub.authentication.cert.example';
+
+    /** Every case runs against the literal on-disk names of both maps. */
+    const MAPS = [
+      {
+        name: 'ABAP keys',
+        variables: ABAP_DESTINATION_VARS,
+        names: {
+          cert: 'SAP_UAA_CLIENT_CERT_PATH',
+          key: 'SAP_UAA_CLIENT_KEY_PATH',
+          certUrl: 'SAP_UAA_CERT_URL',
+          secret: 'SAP_UAA_CLIENT_SECRET',
+          url: 'SAP_UAA_URL',
+          id: 'SAP_UAA_CLIENT_ID',
+        },
+      },
+      {
+        name: 'XSUAA keys',
+        variables: XSUAA_DESTINATION_VARS,
+        names: {
+          cert: 'XSUAA_UAA_CLIENT_CERT_PATH',
+          key: 'XSUAA_UAA_CLIENT_KEY_PATH',
+          certUrl: 'XSUAA_UAA_CERT_URL',
+          secret: 'XSUAA_UAA_CLIENT_SECRET',
+          url: 'XSUAA_UAA_URL',
+          id: 'XSUAA_UAA_CLIENT_ID',
+        },
+      },
+    ];
+    type Names = (typeof MAPS)[number]['names'];
+    type CertVar = 'cert' | 'key' | 'certUrl';
+
+    let certPath: string;
+    let keyPath: string;
+    let readSync: jest.SpyInstance;
+    let readAsync: jest.SpyInstance;
+    beforeEach(() => {
+      certPath = path.join(dir, 'client.crt');
+      keyPath = path.join(dir, 'client.key');
+      fs.writeFileSync(certPath, CERT_PEM);
+      fs.writeFileSync(keyPath, KEY_PEM);
+      readSync = jest.spyOn(nodeFs, 'readFileSync');
+      readAsync = jest.spyOn(nodeFs.promises, 'readFile');
+    });
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    /** The paths handed to any file reader, sync or async. */
+    const pathsRead = (): string[] =>
+      [...readSync.mock.calls, ...readAsync.mock.calls].map((call) =>
+        String(call[0]),
+      );
+    const expectNoCertificateFileRead = () => {
+      expect(pathsRead()).not.toContain(certPath);
+      expect(pathsRead()).not.toContain(keyPath);
+    };
+
+    /** A hand-written destination file under the literal key names. */
+    function writeEnv(lines: Record<string, string>): void {
+      fs.writeFileSync(
+        path.join(dir, 'D.env'),
+        Object.entries(lines)
+          .map(([k, v]) => `${k}=${v}`)
+          .join('\n'),
+      );
+    }
+    const valueFor = (v: CertVar): string =>
+      v === 'cert' ? certPath : v === 'key' ? keyPath : CERT_URL;
+    const certLines = (names: Names, which: readonly CertVar[]) =>
+      Object.fromEntries(which.map((v) => [names[v], valueFor(v)]));
+
+    /** The rejection of a call, attached before it settles. */
+    async function refusalOf(
+      p: Promise<unknown>,
+    ): Promise<ClientCertificateError> {
+      const error = await p.then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+      expect(error).toBeInstanceOf(ClientCertificateError);
+      return error as ClientCertificateError;
+    }
+
+    describe.each(MAPS)('$name', ({ variables, names }) => {
+      it('none of the three: the client as before, no certificate', async () => {
+        writeEnv({
+          [names.url]: UAA_URL,
+          [names.id]: 'client-id',
+          [names.secret]: 'client-secret',
+        });
+        const store = new EnvDestinationStore(dir, { variables });
+
+        expect(await store.getAuthorizationConfig('D')).toEqual({
+          uaaUrl: UAA_URL,
+          uaaClientId: 'client-id',
+          uaaClientSecret: 'client-secret',
+        });
+        expect(await store.getClientCertificate('D')).toBeNull();
+        expectNoCertificateFileRead();
+      });
+
+      it('all three and no client secret: no authorization config, the certificate client with the files read as given', async () => {
+        writeEnv({
+          [names.url]: UAA_URL,
+          [names.id]: 'client-id',
+          ...certLines(names, ['cert', 'key', 'certUrl']),
+        });
+        const store = new EnvDestinationStore(dir, { variables });
+
+        expect(await store.getAuthorizationConfig('D')).toBeNull();
+        const certificate: IClientCertificate | null =
+          await store.getClientCertificate('D');
+        expect(certificate).toEqual({
+          uaaUrl: UAA_URL,
+          clientId: 'client-id',
+          certificate: CERT_PEM,
+          key: KEY_PEM,
+          certUrl: CERT_URL,
+        });
+        // the service key view carries no client either (and here nothing else)
+        expect(await store.getServiceKey('D')).toBeNull();
+      });
+
+      it('a certificate client is not mistaken for a public one, even with a fallback secret', async () => {
+        writeEnv({
+          [names.url]: UAA_URL,
+          [names.id]: 'client-id',
+          ...certLines(names, ['cert', 'key', 'certUrl']),
+        });
+        const store = new EnvDestinationStore(dir, {
+          variables,
+          fallback: fakeKeyStore(null, CLIENT),
+        });
+
+        expect(await store.getAuthorizationConfig('D')).toBeNull();
+      });
+
+      it.each([
+        [['cert'], ['key', 'certUrl']],
+        [['key'], ['cert', 'certUrl']],
+        [['certUrl'], ['cert', 'key']],
+        [['cert', 'key'], ['certUrl']],
+        [['cert', 'certUrl'], ['key']],
+        [['key', 'certUrl'], ['cert']],
+      ] as [CertVar[], CertVar[]][])(
+        'some but not all (%j set): both methods refuse as incomplete, naming %j, reading no file',
+        async (set, missing) => {
+          writeEnv({
+            [names.url]: UAA_URL,
+            [names.id]: 'client-id',
+            ...certLines(names, set),
+          });
+          const store = new EnvDestinationStore(dir, { variables });
+
+          for (const call of [
+            () => store.getAuthorizationConfig('D'),
+            () => store.getClientCertificate('D'),
+          ]) {
+            const error = await refusalOf(call());
+            expect(error.reason).toBe('incomplete');
+            expect(error.message).toContain('incomplete');
+            expect(error.variables).toEqual(missing.map((v) => names[v]));
+            for (const v of missing) expect(error.message).toContain(names[v]);
+            expect(error.message).not.toContain(certPath);
+            expect(error.message).not.toContain(keyPath);
+          }
+          expectNoCertificateFileRead();
+        },
+      );
+
+      it.each([
+        [['cert']],
+        [['key']],
+        [['certUrl']],
+        [['cert', 'key', 'certUrl']],
+      ] as [CertVar[]][])(
+        'any of them (%j) with the client secret variable: both refuse as a mixed client, reading no file',
+        async (set) => {
+          writeEnv({
+            [names.url]: UAA_URL,
+            [names.id]: 'client-id',
+            [names.secret]: 'SENTINEL-secret',
+            ...certLines(names, set),
+          });
+          const store = new EnvDestinationStore(dir, { variables });
+
+          for (const call of [
+            () => store.getAuthorizationConfig('D'),
+            () => store.getClientCertificate('D'),
+          ]) {
+            const error = await refusalOf(call());
+            expect(error.reason).toBe('mixed');
+            expect(error.message).toContain('both a client secret');
+            expect(error.message).toContain(names.secret);
+            expect(error.message).not.toContain('SENTINEL');
+            expect(error.variables).toEqual([
+              names.secret,
+              ...set.map((v) => names[v]),
+            ]);
+          }
+          expectNoCertificateFileRead();
+        },
+      );
+
+      it('a client secret written empty (a public client) with a certificate is mixed too', async () => {
+        writeEnv({
+          [names.url]: UAA_URL,
+          [names.id]: 'client-id',
+          [names.secret]: '',
+          ...certLines(names, ['cert', 'key', 'certUrl']),
+        });
+        const store = new EnvDestinationStore(dir, { variables });
+
+        expect(
+          (await refusalOf(store.getAuthorizationConfig('D'))).reason,
+        ).toBe('mixed');
+        expectNoCertificateFileRead();
+      });
+
+      it('a certificate with no client id or UAA URL is incomplete, reading no file', async () => {
+        writeEnv(certLines(names, ['cert', 'key', 'certUrl']));
+        const store = new EnvDestinationStore(dir, { variables });
+
+        const error = await refusalOf(store.getClientCertificate('D'));
+        expect(error.reason).toBe('incomplete');
+        expect(error.variables).toEqual([names.url, names.id]);
+        expectNoCertificateFileRead();
+      });
+
+      it.each(['cert', 'key'] as const)(
+        'an unreadable %s file: fixed words naming its variable, nothing of a path or a file',
+        async (broken) => {
+          // the other file exists and is read; the broken one is a directory
+          const brokenPath = path.join(dir, 'SENTINEL-dir');
+          fs.mkdirSync(brokenPath);
+          writeEnv({
+            [names.url]: UAA_URL,
+            [names.id]: 'client-id',
+            ...certLines(names, ['cert', 'key', 'certUrl']),
+            [names[broken]]: brokenPath,
+          });
+          const store = new EnvDestinationStore(dir, { variables });
+
+          const error = await refusalOf(store.getClientCertificate('D'));
+          expect(error.reason).toBe('unreadable');
+          expect(error.message).toContain('cannot be read');
+          expect(error.message).toContain(names[broken]);
+          expect(error.variables).toEqual([names[broken]]);
+          expect(error.message).not.toContain('SENTINEL');
+          expect(error.message).not.toContain(dir);
+          expect(error).not.toHaveProperty('cause');
+        },
+      );
+
+      it('setDestination writes the three under these names; a certificate client removes the client secret', async () => {
+        const store = new EnvDestinationStore(dir, { variables });
+        await store.setDestination('D', CLIENT);
+        await store.setDestination('D', {
+          uaaClientCertPath: certPath,
+          uaaClientKeyPath: keyPath,
+          uaaCertUrl: CERT_URL,
+        });
+
+        const text = fs.readFileSync(path.join(dir, 'D.env'), 'utf8');
+        expect(text).not.toContain(names.secret);
+        expect(text).toContain(`${names.cert}=`);
+        expect(text).toContain(`${names.key}=`);
+        expect(text).toContain(`${names.certUrl}=`);
+        expect(await store.getAuthorizationConfig('D')).toBeNull();
+        expect(await store.getClientCertificate('D')).toEqual({
+          uaaUrl: CLIENT.uaaUrl,
+          clientId: CLIENT.uaaClientId,
+          certificate: CERT_PEM,
+          key: KEY_PEM,
+          certUrl: CERT_URL,
+        });
+      });
+
+      it('setDestination writing a secret client removes the three', async () => {
+        const store = new EnvDestinationStore(dir, { variables });
+        await store.setDestination('D', {
+          uaaUrl: UAA_URL,
+          uaaClientId: 'client-id',
+          uaaClientCertPath: certPath,
+          uaaClientKeyPath: keyPath,
+          uaaCertUrl: CERT_URL,
+        });
+        await store.setDestination('D', { uaaClientSecret: 'client-secret' });
+
+        const text = fs.readFileSync(path.join(dir, 'D.env'), 'utf8');
+        expect(text).not.toContain(names.cert);
+        expect(text).not.toContain(names.key);
+        expect(text).not.toContain(names.certUrl);
+        expect(await store.getClientCertificate('D')).toBeNull();
+        expect(await store.getAuthorizationConfig('D')).toEqual({
+          uaaUrl: UAA_URL,
+          uaaClientId: 'client-id',
+          uaaClientSecret: 'client-secret',
+        });
+      });
+
+      it('setDestination refuses a write carrying both kinds, writing nothing', async () => {
+        const store = new EnvDestinationStore(dir, { variables });
+        await expect(
+          store.setDestination('D', {
+            uaaClientSecret: 'SENTINEL-secret',
+            uaaClientCertPath: certPath,
+          }),
+        ).rejects.toBeInstanceOf(ClientCertificateError);
+        expect(fs.existsSync(path.join(dir, 'D.env'))).toBe(false);
+      });
+
+      it('deleteDestination removes the three', async () => {
+        const store = new EnvDestinationStore(dir, { variables });
+        await store.setDestination('D', {
+          uaaClientCertPath: certPath,
+          uaaClientKeyPath: keyPath,
+          uaaCertUrl: CERT_URL,
+        });
+        await store.deleteDestination('D');
+        expect(fs.existsSync(path.join(dir, 'D.env'))).toBe(false);
+      });
+    });
+
+    it('the default maps name exactly these keys', () => {
+      expect(ABAP_DESTINATION_VARS.uaaClientCertPath).toBe(
+        'SAP_UAA_CLIENT_CERT_PATH',
+      );
+      expect(ABAP_DESTINATION_VARS.uaaClientKeyPath).toBe(
+        'SAP_UAA_CLIENT_KEY_PATH',
+      );
+      expect(ABAP_DESTINATION_VARS.uaaCertUrl).toBe('SAP_UAA_CERT_URL');
+      expect(XSUAA_DESTINATION_VARS.uaaClientCertPath).toBe(
+        'XSUAA_UAA_CLIENT_CERT_PATH',
+      );
+      expect(XSUAA_DESTINATION_VARS.uaaClientKeyPath).toBe(
+        'XSUAA_UAA_CLIENT_KEY_PATH',
+      );
+      expect(XSUAA_DESTINATION_VARS.uaaCertUrl).toBe('XSUAA_UAA_CERT_URL');
+    });
+
+    describe('a custom map without the three keys', () => {
+      // a 3.2.0 consumer's map: every key it had then, none of the new three
+      const {
+        uaaClientCertPath: _cert,
+        uaaClientKeyPath: _key,
+        uaaCertUrl: _certUrl,
+        ...old
+      } = ABAP_DESTINATION_VARS;
+      const custom: DestinationVariables = { ...old };
+
+      it('type-checks and supports no certificate destination', async () => {
+        expect(custom).not.toHaveProperty('uaaClientCertPath');
+        writeEnv({
+          SAP_UAA_URL: UAA_URL,
+          SAP_UAA_CLIENT_ID: 'client-id',
+          SAP_UAA_CLIENT_SECRET: 'client-secret',
+          SAP_UAA_CLIENT_CERT_PATH: certPath,
+          SAP_UAA_CLIENT_KEY_PATH: keyPath,
+          SAP_UAA_CERT_URL: CERT_URL,
+        });
+        const store = new EnvDestinationStore(dir, { variables: custom });
+
+        expect(await store.getClientCertificate('D')).toBeNull();
+        expect(await store.getAuthorizationConfig('D')).toEqual({
+          uaaUrl: UAA_URL,
+          uaaClientId: 'client-id',
+          uaaClientSecret: 'client-secret',
+        });
+        expectNoCertificateFileRead();
+      });
+
+      it('refuses to write a certificate field it has no key for', async () => {
+        const store = new EnvDestinationStore(dir, { variables: custom });
+        await expect(
+          store.setDestination('D', { uaaClientCertPath: certPath }),
+        ).rejects.toThrow('uaaClientCertPath');
+        expect(fs.existsSync(path.join(dir, 'D.env'))).toBe(false);
+      });
+    });
   });
 });

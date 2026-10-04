@@ -20,9 +20,24 @@
  * - **A fallback** `IServiceKeyStore` (a SAP service key store, say) fills, field
  *   by field, what the file leaves out: a key supplies the client and URL, the
  *   file the grant. A field the file states — `''` included — wins.
+ * - **A client certificate** (3.3.0) is three means of this store's own —
+ *   `uaaClientCertPath`, `uaaClientKeyPath`, `uaaCertUrl` (`SAP_UAA_CLIENT_CERT_PATH`,
+ *   `SAP_UAA_CLIENT_KEY_PATH`, `SAP_UAA_CERT_URL`, or `XSUAA_UAA_…`): two paths
+ *   and a URL, never PEM. Which variables are set decides, and no file is read
+ *   to decide: none of the three → as before, and `getClientCertificate`
+ *   answers `null`; all three and no client secret variable → a certificate
+ *   client: `getAuthorizationConfig` answers `null` (an x509 client is never a
+ *   public one) and `getClientCertificate` reads the two files; some but not
+ *   all, or any with the client secret variable (`''` included) → both throw
+ *   a `ClientCertificateError` naming the variables. A variable written as `''`
+ *   is not set. A custom `variables` map without the three keys supports no
+ *   certificate (`getClientCertificate` → `null`). The certificate's client id
+ *   and UAA URL are the file's, never the fallback's.
  * - **Writing** is this class's own `setDestination`, outside the read-only
  *   contract; it touches only the means keys, so the file may be shared with a
- *   session store, which touches only its secret keys.
+ *   session store, which touches only its secret keys. Writing a certificate
+ *   client removes the client secret variable; writing a secret client removes
+ *   the three — a switch leaves no credential of the other kind.
  *
  * The directory has no default: the consumer that composes the stores decides
  * where means and secrets live.
@@ -31,6 +46,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type {
+  IClientCertificate,
   IConfig,
   IConnectionConfig,
   IServiceKeyStore,
@@ -38,6 +54,7 @@ import type {
 import type { IAuthorizationConfig } from '@mcp-abap-adt/interfaces-auth-sap';
 import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
 import {
+  ClientCertificateError,
   InvalidConfigError,
   RefusedFieldsError,
   StorageError,
@@ -93,15 +110,35 @@ const CONNECTION_FIELDS = [
 ] as const satisfies readonly (keyof IConnectionConfig)[];
 type ConnectionField = (typeof CONNECTION_FIELDS)[number];
 
-export type MeansField = ConnectionField | ClientField;
+/**
+ * A client certificate: two paths and a URL — never PEM. This store's own
+ * means, not `IConfig`'s; the certificate itself is answered by
+ * `getClientCertificate`.
+ */
+const CERT_FIELDS = [
+  'uaaClientCertPath',
+  'uaaClientKeyPath',
+  'uaaCertUrl',
+] as const;
+type CertField = (typeof CERT_FIELDS)[number];
+
+export type MeansField = ConnectionField | ClientField | CertField;
 
 const MEANS_FIELDS: readonly MeansField[] = [
   ...CONNECTION_FIELDS,
   ...CLIENT_FIELDS,
+  ...CERT_FIELDS,
 ];
 
-/** The env key of every means field. */
-export type DestinationVariables = Readonly<Record<MeansField, string>>;
+/**
+ * The env key of every means field. The three certificate keys are optional,
+ * so a map written for 3.2.0 still type-checks; a map without them supports
+ * no certificate destination.
+ */
+export type DestinationVariables = Readonly<
+  Record<Exclude<MeansField, CertField>, string> &
+    Partial<Record<CertField, string>>
+>;
 
 const SUFFIXES: Record<MeansField, string> = {
   serviceUrl: 'URL',
@@ -137,6 +174,9 @@ const SUFFIXES: Record<MeansField, string> = {
   samlIdpInitiated: 'SAML_IDP_INITIATED',
   samlClockSkewMs: 'SAML_CLOCK_SKEW_MS',
   samlTokenUrl: 'SAML_TOKEN_URL',
+  uaaClientCertPath: 'UAA_CLIENT_CERT_PATH',
+  uaaClientKeyPath: 'UAA_CLIENT_KEY_PATH',
+  uaaCertUrl: 'UAA_CERT_URL',
 };
 
 function withPrefix(
@@ -170,7 +210,7 @@ export const XSUAA_DESTINATION_VARS: DestinationVariables = withPrefix(
 
 /** A means write: a value sets a field, `null` removes it, absent leaves it. */
 export type DestinationMeans = {
-  [K in MeansField]?: IConfig[K] | null;
+  [K in MeansField]?: (K extends keyof IConfig ? IConfig[K] : string) | null;
 };
 
 export interface EnvDestinationStoreOptions {
@@ -184,8 +224,17 @@ export interface EnvDestinationStoreOptions {
 const AUTH_TYPES = ['basic', 'jwt', 'saml', 'snc'] as const;
 const GRANTS = DESTINATION_GRANTS;
 
-type Kind = 'string' | 'list' | 'certificates' | 'boolean' | 'number';
+type Kind =
+  | 'string'
+  | 'nonEmpty'
+  | 'list'
+  | 'certificates'
+  | 'boolean'
+  | 'number';
 const KIND: Partial<Record<MeansField, Kind>> = {
+  uaaClientCertPath: 'nonEmpty',
+  uaaClientKeyPath: 'nonEmpty',
+  uaaCertUrl: 'nonEmpty',
   oidcScopes: 'list',
   samlIdpCertificates: 'certificates',
   samlIdpInitiated: 'boolean',
@@ -259,7 +308,7 @@ export class EnvDestinationStore implements IServiceKeyStore {
     if (vars === null) return means;
     for (const field of MEANS_FIELDS) {
       const key = this.variables[field];
-      if (!(key in vars)) continue;
+      if (key === undefined || !(key in vars)) continue;
       const value = decode(field, key, vars[key], destination);
       if (value !== undefined) means[field] = value;
     }
@@ -287,10 +336,66 @@ export class EnvDestinationStore implements IServiceKeyStore {
       : null;
   }
 
+  /**
+   * Whether the file states a client certificate, decided from which
+   * variables are set alone — no file is read. Some but not all three, or any
+   * with the client secret variable, is refused.
+   */
+  private certificateStated(
+    destination: string,
+    file: Partial<Record<MeansField, unknown>>,
+  ): boolean {
+    const set = CERT_FIELDS.filter(
+      (field) => typeof file[field] === 'string' && file[field] !== '',
+    );
+    if (set.length === 0) return false;
+    if ('uaaClientSecret' in file) {
+      const variables = [
+        this.variables.uaaClientSecret,
+        ...set.map((field) => this.variableOf(field)),
+      ];
+      throw new ClientCertificateError(
+        `EnvDestinationStore: "${destination}" states both a client secret (${variables[0]}) and a client certificate (${variables.slice(1).join(', ')}); a client has one or the other`,
+        'mixed',
+        variables,
+      );
+    }
+    const missing = CERT_FIELDS.filter((field) => !set.includes(field));
+    if (missing.length > 0) {
+      throw this.incomplete(
+        destination,
+        missing.map((field) => this.variableOf(field)),
+      );
+    }
+    return true;
+  }
+
+  /** A field's variable; only a field read from the file is asked for. */
+  private variableOf(field: MeansField): string {
+    return this.variables[field] as string;
+  }
+
+  private incomplete(
+    destination: string,
+    variables: string[],
+  ): ClientCertificateError {
+    return new ClientCertificateError(
+      `EnvDestinationStore: the client certificate of "${destination}" is incomplete: ${variables.join(', ')} not set`,
+      'incomplete',
+      variables,
+    );
+  }
+
   async getAuthorizationConfig(
     destination: string,
   ): Promise<IAuthorizationConfig | null> {
     const file = this.readFile(destination);
+    // An x509 client is never answered here: an older consumer would read
+    // its missing secret as a public client.
+    if (this.certificateStated(destination, file)) {
+      this.log?.debug(`Destination ${destination}: a certificate client`);
+      return null;
+    }
     const fallback = this.fallback
       ? await this.fallback.getAuthorizationConfig(destination)
       : null;
@@ -315,6 +420,64 @@ export class EnvDestinationStore implements IServiceKeyStore {
       uaaClientId: client.uaaClientId,
       uaaClientSecret: client.uaaClientSecret ?? '',
     };
+  }
+
+  /**
+   * The destination's client certificate: `null` when none of the three
+   * variables is set (or the map has no key for them). The two files are read
+   * only once the variables say a certificate client; the client id and UAA
+   * URL are the file's. A failure is fixed words naming variables — never a
+   * path, a file's content or the underlying error.
+   */
+  async getClientCertificate(
+    destination: string,
+  ): Promise<IClientCertificate | null> {
+    const file = this.readFile(destination);
+    if (!this.certificateStated(destination, file)) return null;
+    const missing = (['uaaUrl', 'uaaClientId'] as const).filter(
+      (field) => typeof file[field] !== 'string' || file[field] === '',
+    );
+    if (missing.length > 0) {
+      throw this.incomplete(
+        destination,
+        missing.map((field) => this.variableOf(field)),
+      );
+    }
+    const certificate = await this.readCertificateFile(
+      destination,
+      'uaaClientCertPath',
+      file.uaaClientCertPath as string,
+    );
+    const key = await this.readCertificateFile(
+      destination,
+      'uaaClientKeyPath',
+      file.uaaClientKeyPath as string,
+    );
+    return {
+      uaaUrl: file.uaaUrl as string,
+      clientId: file.uaaClientId as string,
+      certificate,
+      key,
+      certUrl: file.uaaCertUrl as string,
+    };
+  }
+
+  private async readCertificateFile(
+    destination: string,
+    field: CertField,
+    filePath: string,
+  ): Promise<string> {
+    try {
+      return await fs.promises.readFile(filePath, 'utf8');
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException)?.code;
+      const variable = this.variableOf(field);
+      throw new ClientCertificateError(
+        `EnvDestinationStore: the file ${variable} names for "${destination}" cannot be read (${typeof code === 'string' && /^E[A-Z0-9]+$/.test(code) ? code : 'unknown error'})`,
+        'unreadable',
+        [variable],
+      );
+    }
   }
 
   async getServiceKey(destination: string): Promise<IConfig | null> {
@@ -345,12 +508,49 @@ export class EnvDestinationStore implements IServiceKeyStore {
         refused,
       );
     }
+    const given = (field: MeansField): unknown =>
+      (means as Record<string, unknown>)[field];
+    const unnamed = CERT_FIELDS.filter(
+      (field) => this.variables[field] === undefined && given(field) != null,
+    );
+    if (unnamed.length > 0) {
+      throw new InvalidConfigError(
+        `EnvDestinationStore: the variables map names no key for ${unnamed.join(', ')}; the write for "${destination}" cannot be stored`,
+        [...unnamed],
+      );
+    }
+    // A client is a secret or a certificate: writing one removes the other,
+    // so a switch leaves no stale credential of the other kind.
+    const certificateWritten = CERT_FIELDS.filter(
+      (field) => given(field) != null,
+    );
+    const secretWritten = given('uaaClientSecret') != null;
+    if (certificateWritten.length > 0 && secretWritten) {
+      const variables = [
+        this.variables.uaaClientSecret,
+        ...certificateWritten.map((field) => this.variableOf(field)),
+      ];
+      throw new ClientCertificateError(
+        `EnvDestinationStore: the write for "${destination}" carries both a client secret (${variables[0]}) and a client certificate (${variables.slice(1).join(', ')}); a client has one or the other`,
+        'mixed',
+        variables,
+      );
+    }
     const updates: Record<string, string | null> = {};
     for (const field of MEANS_FIELDS) {
-      const value = (means as Record<string, unknown>)[field];
-      if (value === undefined) continue;
-      updates[this.variables[field]] =
-        value === null ? null : encode(field, value, destination);
+      const value = given(field);
+      const key = this.variables[field];
+      if (value === undefined || key === undefined) continue;
+      updates[key] = value === null ? null : encode(field, value, destination);
+    }
+    if (certificateWritten.length > 0) {
+      updates[this.variables.uaaClientSecret] = null;
+    }
+    if (secretWritten) {
+      for (const field of CERT_FIELDS) {
+        const key = this.variables[field];
+        if (key !== undefined) updates[key] = null;
+      }
     }
     const file = this.fileOf(destination);
     const removesOnly = Object.values(updates).every((v) => v === null);
@@ -418,6 +618,10 @@ function encode(
         .map((cert: string) => Buffer.from(cert, 'utf8').toString('base64'))
         .join(',');
     }
+    case 'nonEmpty':
+      if (typeof value !== 'string' || value === '')
+        throw formError(destination, field, 'a non-empty string');
+      return value;
     case 'boolean':
       if (typeof value !== 'boolean')
         throw formError(destination, field, 'a boolean');

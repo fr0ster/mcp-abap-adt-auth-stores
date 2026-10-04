@@ -7,6 +7,8 @@
 
 // Error classes
 export {
+  ClientCertificateError,
+  type ClientCertificateProblem,
   FileNotFoundError,
   InvalidConfigError,
   ParseError,
