@@ -63,7 +63,7 @@ export class AbapSessionStore extends SecretSessionStore {
     return path.join(this.directory, `${destination}.env`);
   }
 
-  protected async exclusive<T>(
+  protected override async exclusive<T>(
     destination: string,
     fn: () => Promise<T>,
   ): Promise<T> {

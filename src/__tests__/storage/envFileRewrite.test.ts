@@ -104,6 +104,7 @@ describe('rewriting a shared .env file', () => {
       } catch (e) {
         return e;
       }
+      return undefined;
     })();
     expect(failure).toBeInstanceOf(StorageError);
     expect((failure as Error).message).toContain('D.env');

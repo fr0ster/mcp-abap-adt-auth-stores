@@ -56,7 +56,7 @@ export class EnvFileSessionStore extends SecretSessionStore {
     return readFileSecret(this.envFilePath, KEYS, destination, forWrite);
   }
 
-  protected async exclusive<T>(
+  protected override async exclusive<T>(
     _destination: string,
     fn: () => Promise<T>,
   ): Promise<T> {

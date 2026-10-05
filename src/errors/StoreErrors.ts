@@ -41,7 +41,7 @@ export class FileNotFoundError extends StoreError {
  */
 export class ParseError extends StoreError {
   public readonly filePath?: string;
-  public readonly cause?: Error;
+  public override readonly cause?: Error;
 
   constructor(message: string, filePath?: string, cause?: Error) {
     super(message, STORE_ERROR_CODES.PARSE_ERROR);
@@ -71,7 +71,7 @@ export class InvalidConfigError extends StoreError {
  */
 export class StorageError extends StoreError {
   public readonly operation: string;
-  public readonly cause?: Error;
+  public override readonly cause?: Error;
 
   constructor(operation: string, message: string, cause?: Error) {
     super(message, STORE_ERROR_CODES.STORAGE_ERROR);
