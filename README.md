@@ -651,6 +651,19 @@ Unit tests use Jest with mocked file system operations:
 npm test
 ```
 
+### Checks
+
+```bash
+npm run build        # biome errors, then tsc -p tsconfig.build.json (no tests in dist)
+npm run test:check   # tsc --noEmit over src and its tests
+npm run lint:check   # biome, read-only; a warning fails it
+npm test
+```
+
+CI runs all four. The compiler is `strict` plus `noImplicitReturns`,
+`noFallthroughCasesInSwitch`, `noImplicitOverride`, `noUncheckedIndexedAccess`
+and `exactOptionalPropertyTypes`, for the tests too.
+
 ### Integration Tests
 
 Integration tests work with real files from `tests/test-config.yaml`:
