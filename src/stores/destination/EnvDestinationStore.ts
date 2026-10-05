@@ -322,7 +322,10 @@ export class EnvDestinationStore implements IServiceKeyStore {
     for (const field of STORED_FIELDS) {
       const key = this.variables[field];
       if (key === undefined || !(key in vars)) continue;
-      const value = decode(field, key, vars[key], destination);
+      const raw = vars[key];
+      // dotenv parses every key to a string; `in` found it
+      if (raw === undefined) continue;
+      const value = decode(field, key, raw, destination);
       if (value !== undefined) means[field] = value;
     }
     return means;
