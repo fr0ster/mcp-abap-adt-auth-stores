@@ -103,12 +103,7 @@ export class AbapServiceKeyStore implements IServiceKeyStore {
         `Parsed service key structure: hasUaa(${!!key.uaa}), uaaKeys(${key.uaa ? Object.keys(key.uaa).join(', ') : 'none'})`,
       );
 
-      if (
-        !key.uaa ||
-        !key.uaa.url ||
-        !key.uaa.clientid ||
-        !key.uaa.clientsecret
-      ) {
+      if (!key.uaa?.url || !key.uaa.clientid || !key.uaa.clientsecret) {
         this.log?.warn(
           `Service key for ${destination} missing required UAA fields: url(${!!key.uaa?.url}), clientid(${!!key.uaa?.clientid}), clientsecret(${!!key.uaa?.clientsecret})`,
         );
