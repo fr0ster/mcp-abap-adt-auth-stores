@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking: Node.js 22, 24 or 26.** `engines` is `^22 || ^24 || ^26`, the
+  versions SAP BTP, Cloud Foundry supports; Node 18 and 20, past their end of
+  life, are no longer supported. CI runs on all three.
+
 - **A stricter compiler, the same behaviour.** `tsconfig.json` adds
   `noImplicitReturns`, `noFallthroughCasesInSwitch`, `noImplicitOverride`,
   `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`, for the source
