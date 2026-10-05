@@ -17,7 +17,7 @@ import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
  * Parser for direct XSUAA service key format from BTP
  */
 export class XsuaaServiceKeyParser {
-  private log?: ILogger;
+  private log?: ILogger | undefined;
 
   /**
    * Create a new XsuaaServiceKeyParser instance

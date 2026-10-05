@@ -12,6 +12,7 @@ import type { IAuthorizationConfig } from '@mcp-abap-adt/interfaces-auth-sap';
 import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
 import { ParseError } from '../../errors/StoreErrors';
 import { AbapServiceKeyParser } from '../../parsers/abap/AbapServiceKeyParser';
+import { asContract } from '../../utils/contractShape';
 import { JsonFileHandler } from '../../utils/JsonFileHandler';
 import {
   readServiceKeyStoreOptions,
@@ -26,7 +27,7 @@ import {
 export class AbapServiceKeyStore implements IServiceKeyStore {
   private directory: string;
   private parser: AbapServiceKeyParser;
-  private log?: ILogger;
+  private log?: ILogger | undefined;
   private grantType?: ServiceKeyStoreOptions['grantType'];
 
   /**
@@ -184,12 +185,12 @@ export class AbapServiceKeyStore implements IServiceKeyStore {
       // Which grant it uses the key cannot state: the grant is answered only
       // when whoever built the store stated it. A token is secret — a key
       // store answers none.
-      const result: IConnectionConfig = {
+      const result = asContract<IConnectionConfig>({
         serviceUrl,
         authType: 'jwt',
         sapClient,
         language,
-      };
+      });
       if (this.grantType) result.grantType = this.grantType;
 
       this.log?.info(

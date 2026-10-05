@@ -228,10 +228,10 @@ export type DestinationMeans = {
 
 export interface EnvDestinationStoreOptions {
   /** Answers, field by field, what the file leaves out. */
-  fallback?: IServiceKeyStore;
+  fallback?: IServiceKeyStore | undefined;
   /** The key names. `ABAP_DESTINATION_VARS` when not given. */
-  variables?: DestinationVariables;
-  log?: ILogger;
+  variables?: DestinationVariables | undefined;
+  log?: ILogger | undefined;
 }
 
 const AUTH_TYPES = ['basic', 'jwt', 'saml', 'snc'] as const;
@@ -259,9 +259,9 @@ export class EnvDestinationStore implements IServiceKeyStore {
   private readonly directory: string;
   /** Set by `forFile`: every destination resolves to this one file. */
   private singleFile?: string;
-  private readonly fallback?: IServiceKeyStore;
+  private readonly fallback?: IServiceKeyStore | undefined;
   private readonly variables: DestinationVariables;
-  private readonly log?: ILogger;
+  private readonly log?: ILogger | undefined;
 
   /**
    * @param directory Where `<destination>.env` files are — no default

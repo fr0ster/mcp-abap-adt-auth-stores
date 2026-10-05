@@ -29,8 +29,8 @@ export interface ServiceKeyStoreOptions {
    * `getConnectionConfig` and `getServiceKey` for every destination that has a
    * key. Absent, no grant is answered (3.0.0).
    */
-  grantType?: DestinationGrant;
-  log?: ILogger;
+  grantType?: DestinationGrant | undefined;
+  log?: ILogger | undefined;
 }
 
 const OPTION_NAMES = ['grantType', 'log'] as const;

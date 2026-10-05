@@ -22,7 +22,7 @@ import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
  * Parser for standard ABAP service key format
  */
 export class AbapServiceKeyParser {
-  private log?: ILogger;
+  private log?: ILogger | undefined;
 
   /**
    * Create a new AbapServiceKeyParser instance
