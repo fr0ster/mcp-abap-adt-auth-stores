@@ -38,11 +38,11 @@ export interface SecretSessionStoreOptions {
    * that would leave the session without a token (the XSUAA stores).
    */
   tokenOnly: boolean;
-  log?: ILogger;
+  log?: ILogger | undefined;
 }
 
 export abstract class SecretSessionStore implements ISessionStore {
-  protected readonly log?: ILogger;
+  protected readonly log?: ILogger | undefined;
   private readonly storeName: string;
   private readonly tokenOnly: boolean;
 

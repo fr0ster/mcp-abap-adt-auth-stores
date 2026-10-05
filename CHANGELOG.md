@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking: Node.js 22, 24 or 26.** `engines` is `^22 || ^24 || ^26`, the
+  versions SAP BTP, Cloud Foundry supports; Node 18 and 20, past their end of
+  life, are no longer supported. CI runs on all three.
+
+- **A stricter compiler, the same behaviour.** `tsconfig.json` adds
+  `noImplicitReturns`, `noFallthroughCasesInSwitch`, `noImplicitOverride`,
+  `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`, for the source
+  and the tests alike. No answer, file or error changes: every object a store
+  hands out or writes keeps exactly its 3.3.0 own keys — a key present with
+  the value `undefined` included (the key stores' `getConnectionConfig` answers
+  `sapClient: undefined` for a key without a client, as before) — pinned by a
+  test of each object kind.
+- **Optional fields that take or hold `undefined` now say so** in the
+  declarations: `ParseError.filePath` and `.cause`, `StorageError.cause`,
+  `ServiceKeyStoreOptions.grantType` and `.log`,
+  `EnvDestinationStoreOptions.fallback`, `.variables` and `.log`, and
+  `SecretSessionStore`'s options and protected `log` are `?: T | undefined`.
+  Widened only: a consumer compiling with `exactOptionalPropertyTypes` may now
+  pass `{ log: undefined }`, which the stores always accepted; reading one of
+  these fields was already `T | undefined`.
+- **The tests are type-checked.** `npm run test:check` covers `src/__tests__`;
+  the build compiles `tsconfig.build.json`, which leaves the tests out of
+  `dist`. `npm run lint:check` fails on a warning, and `noExplicitAny` is an
+  error outside the tests. CI runs `test:check` and `lint:check` after the
+  build.
+
 ## [3.3.0] - 2026-10-05
 
 Client certificates: an XSUAA x509 service key, and a certificate destination

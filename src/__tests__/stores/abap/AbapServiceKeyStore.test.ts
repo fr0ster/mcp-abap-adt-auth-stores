@@ -4,7 +4,6 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { jest } from '@jest/globals';
 import { AbapServiceKeyStore } from '../../../stores/abap/AbapServiceKeyStore';
 import { createTestLogger } from '../../helpers/testLogger';
 

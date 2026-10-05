@@ -78,14 +78,17 @@ describe.each(STORES)('%s: a malformed key file', (name, make, fixed) => {
       );
       expect(methods.length).toBe(name === 'XsuaaServiceKeyStore' ? 4 : 3);
       for (const method of methods) {
-        const error = await (
-          store as unknown as Record<string, (d: string) => Promise<unknown>>
-        )
-          [method](destination)
-          .then(
-            () => undefined,
-            (e: unknown) => e,
-          );
+        const call = (
+          store as unknown as Record<
+            string,
+            ((d: string) => Promise<unknown>) | undefined
+          >
+        )[method];
+        if (call === undefined) throw new Error(`no method ${method}`);
+        const error = await call.call(store, destination).then(
+          () => undefined,
+          (e: unknown) => e,
+        );
         expect(error).toBeInstanceOf(ParseError);
         const refusal = error as ParseError;
         expect(refusal.message).toBe(fixed);

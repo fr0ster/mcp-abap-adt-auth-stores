@@ -98,7 +98,7 @@ interface KeySpan {
 }
 
 /** Where each key assignment of a file is, as dotenv reads it. */
-function keySpans(content: string): KeySpan[] {
+function keySpans(content: string, filePath: string): KeySpan[] {
   const spans: KeySpan[] = [];
   const re = new RegExp(DOTENV_LINE.source, DOTENV_LINE.flags);
   for (let m = re.exec(content); m !== null; m = re.exec(content)) {
@@ -106,15 +106,24 @@ function keySpans(content: string): KeySpan[] {
       re.lastIndex++;
       continue;
     }
-    const indices = (m as RegExpExecArray & { indices: [number, number][] })
-      .indices;
-    const keyStart = indices[1][0];
-    const valueEnd = indices[2] ? indices[2][1] : indices[1][1];
+    // the `d` flag gives indices, and the key group is not optional: a match
+    // always has both — refused rather than guessed if it ever has not
+    const key = m[1];
+    const keyIndices = m.indices?.[1];
+    if (key === undefined || keyIndices === undefined) {
+      throw new StorageError(
+        'write',
+        `Cannot rewrite ${filePath} safely: a line matched without a key`,
+      );
+    }
+    const valueIndices = m.indices?.[2];
+    const keyStart = keyIndices[0];
+    const valueEnd = valueIndices ? valueIndices[1] : keyIndices[1];
     const start = content.lastIndexOf('\n', keyStart - 1) + 1;
     let end = content.indexOf('\n', valueEnd);
     if (end === -1) end = content.length;
     if (end > valueEnd && content[end - 1] === '\r') end--;
-    spans.push({ key: m[1], start, end });
+    spans.push({ key, start, end });
   }
   return spans;
 }
@@ -145,7 +154,7 @@ export function rewriteEnvKeys(
   updates: Record<string, string | null>,
 ): void {
   const existing = readEnvFileOrNull(filePath) ?? '';
-  const spans = keySpans(existing);
+  const spans = keySpans(existing, filePath);
 
   const edits: { start: number; end: number; text: string }[] = [];
   const appended: string[] = [];

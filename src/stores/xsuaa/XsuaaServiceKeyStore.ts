@@ -11,6 +11,7 @@ import type {
 import type { IAuthorizationConfig } from '@mcp-abap-adt/interfaces-auth-sap';
 import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
 import { ClientCertificateError, ParseError } from '../../errors/StoreErrors';
+import { asContract } from '../../utils/contractShape';
 import { JsonFileHandler } from '../../utils/JsonFileHandler';
 import {
   readServiceKeyStoreOptions,
@@ -55,7 +56,7 @@ const stated = (value: unknown): boolean =>
  */
 export class XsuaaServiceKeyStore implements IServiceKeyStore {
   private directory: string;
-  private log?: ILogger;
+  private log?: ILogger | undefined;
   private grantType?: ServiceKeyStoreOptions['grantType'];
 
   /**
@@ -264,14 +265,14 @@ export class XsuaaServiceKeyStore implements IServiceKeyStore {
     // Which grant it uses the key cannot state: the grant is answered only
     // when whoever built the store stated it. A token is secret — a key store
     // answers none.
-    const result: IConnectionConfig = {
+    const result = asContract<IConnectionConfig>({
       serviceUrl,
       authType: 'jwt',
       sapClient: (abap?.client || data.sap_client || data.client) as
         | string
         | undefined,
       language: (abap?.language || data.language) as string | undefined,
-    };
+    });
     if (this.grantType) result.grantType = this.grantType;
     return result;
   }

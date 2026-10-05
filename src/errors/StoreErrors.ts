@@ -40,8 +40,8 @@ export class FileNotFoundError extends StoreError {
  * Error thrown when a file cannot be parsed (invalid JSON, YAML, etc.)
  */
 export class ParseError extends StoreError {
-  public readonly filePath?: string;
-  public readonly cause?: Error;
+  public readonly filePath?: string | undefined;
+  public override readonly cause?: Error | undefined;
 
   constructor(message: string, filePath?: string, cause?: Error) {
     super(message, STORE_ERROR_CODES.PARSE_ERROR);
@@ -71,7 +71,7 @@ export class InvalidConfigError extends StoreError {
  */
 export class StorageError extends StoreError {
   public readonly operation: string;
-  public readonly cause?: Error;
+  public override readonly cause?: Error | undefined;
 
   constructor(operation: string, message: string, cause?: Error) {
     super(message, STORE_ERROR_CODES.STORAGE_ERROR);
