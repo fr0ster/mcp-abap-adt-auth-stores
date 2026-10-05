@@ -18,6 +18,7 @@ import { StorageError } from '../../errors/StoreErrors';
 import { withFileLock } from '../../storage/fileLock';
 import { AbapSessionStore } from '../../stores/abap/AbapSessionStore';
 import { SafeAbapSessionStore } from '../../stores/abap/SafeAbapSessionStore';
+import { EnvDestinationStore } from '../../stores/destination/EnvDestinationStore';
 import { EnvFileSessionStore } from '../../stores/env/EnvFileSessionStore';
 import { SafeXsuaaSessionStore } from '../../stores/xsuaa/SafeXsuaaSessionStore';
 import { XsuaaSessionStore } from '../../stores/xsuaa/XsuaaSessionStore';
@@ -227,9 +228,6 @@ const [role, dir, n] = process.argv.slice(2);
 
   it('a session store and EnvDestinationStore lose no key and fail no write', async () => {
     const file = path.join(dir, 'D.env');
-    const { EnvDestinationStore } = await import(
-      '../../stores/destination/EnvDestinationStore'
-    );
     await new EnvDestinationStore(dir).setDestination('D', {
       serviceUrl: 'https://u',
       authType: 'jwt',

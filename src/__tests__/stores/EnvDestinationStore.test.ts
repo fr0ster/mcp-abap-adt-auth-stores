@@ -27,6 +27,7 @@ import {
   EnvDestinationStore,
   XSUAA_DESTINATION_VARS,
 } from '../../stores/destination/EnvDestinationStore';
+import { EnvFileSessionStore } from '../../stores/env/EnvFileSessionStore';
 
 const CERT_A = [
   '-----BEGIN CERTIFICATE-----',
@@ -411,9 +412,6 @@ describe('EnvDestinationStore', () => {
     it('writes to that file, and shares it with EnvFileSessionStore', async () => {
       const file = path.join(dir, 'conn.cfg');
       const means = EnvDestinationStore.forFile(file);
-      const { EnvFileSessionStore } = await import(
-        '../../stores/env/EnvFileSessionStore'
-      );
       const secret = new EnvFileSessionStore(file);
 
       await means.setDestination('x', {
