@@ -115,7 +115,8 @@ export function takeSecret(
  *   the kind not held leaves the held credential and its expiry as they are.
  * - A write of both kinds at once is refused: a session holds one.
  * - `expiresAt` alone updates the expiry of the credential held.
- * - `refreshToken` given is kept, `''` clears it, absent leaves it.
+ * - `refreshToken` given is kept, `''` clears it, absent (or `undefined`)
+ *   leaves it — `''` is the one way to remove a stored refresh token.
  * - `issuedFor` and `issuedBy` (3.1.0) go with the credential: a credential
  *   written (a token or cookies) takes those its write gives, and one the
  *   write leaves out — absent or `''` — is cleared. With no credential written,
