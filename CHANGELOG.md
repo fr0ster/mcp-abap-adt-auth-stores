@@ -5,10 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [4.0.0]
+
+The auth chain's new contract majors, Node.js 22 or later, and a stricter
+compiler. No store answers, writes or refuses anything differently from 3.3.0.
+
+### Migration (for a 3.x consumer)
+
+- **Be on the new contracts.** 4.0.0 depends on
+  `@mcp-abap-adt/interfaces-auth` `^7.5.0`, `@mcp-abap-adt/interfaces-auth-sap`
+  `^3.3.0` and `@mcp-abap-adt/interfaces-auth-broker` `^1.3.0`. A consumer
+  must be on the same majors — `@mcp-abap-adt/interfaces-auth` 7,
+  `@mcp-abap-adt/auth-providers` 6, and the `@mcp-abap-adt/auth-broker`
+  release built on them — so that one copy of each contract package is
+  installed; a consumer still on `interfaces-auth` 3 / `auth-providers` 5 stays
+  on auth-stores 3.
+- **Run on Node.js 22, 24 or 26** (see *Changed*).
+- **Clearing a refresh token is `refreshToken: ''`.** Unchanged behaviour,
+  now stated and pinned: a session write with `refreshToken: ''` removes the
+  stored refresh token — also beside a new access token; `refreshToken`
+  omitted or `undefined` keeps the one stored. A consumer that obtains a new
+  access token without a refresh token, and must not keep using the stored
+  one, writes `''`.
 
 ### Changed
 
+- **Breaking: the contract packages' new majors.**
+  `@mcp-abap-adt/interfaces-auth` `^3.0.0` → `^7.5.0`,
+  `@mcp-abap-adt/interfaces-auth-sap` `^2.0.0` → `^3.3.0`,
+  `@mcp-abap-adt/interfaces-auth-broker` `^1.2.0` → `^1.3.0`. The compiler
+  reports nothing against them: no source change. `IConnectionConfig` still
+  declares its optional fields `?: T`, so the `asContract` bridge stays.
 - **Breaking: Node.js 22, 24 or 26.** `engines` is `^22 || ^24 || ^26`, the
   versions SAP BTP, Cloud Foundry supports; Node 18 and 20, past their end of
   life, are no longer supported. CI runs on all three.
@@ -34,6 +61,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `dist`. `npm run lint:check` fails on a warning, and `noExplicitAny` is an
   error outside the tests. CI runs `test:check` and `lint:check` after the
   build.
+- **The release workflow** runs on Node.js 22 (it ran on 18) and fails when
+  the pushed tag differs from `package.json`'s version.
+
+### Documented
+
+- **`refreshToken: ''` is the operation that clears the stored refresh
+  token**, in every session store (`AbapSessionStore`, `XsuaaSessionStore`,
+  `EnvFileSessionStore`, `SafeAbapSessionStore`, `SafeXsuaaSessionStore`); a
+  test per store pins `''` against omitted and `undefined`. README and the
+  store docs say so.
 
 ## [3.3.0] - 2026-10-05
 
