@@ -11,6 +11,8 @@ This package provides file-based and in-memory stores for service keys and sessi
 npm install @mcp-abap-adt/auth-stores
 ```
 
+Requires Node.js 22, 24 or 26. 4.0.0 is built on `@mcp-abap-adt/interfaces-auth` 7, `@mcp-abap-adt/interfaces-auth-sap` 3 and `@mcp-abap-adt/interfaces-auth-broker` 1.3: use it with the auth chain on those contracts (`@mcp-abap-adt/auth-providers` 6 and the broker release built on them) — see the CHANGELOG's migration note.
+
 ## Overview
 
 This package implements the `IServiceKeyStore` and `ISessionStore` contracts from `@mcp-abap-adt/interfaces-auth-broker`. Since 3.0.0 the two stores are split **by the role of the data**:
@@ -69,9 +71,9 @@ This package is responsible for:
 
 This package interacts with external packages **ONLY through interfaces**:
 
-- **`@mcp-abap-adt/interfaces-auth-broker`** (`^1.1.0`): `IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `DestinationGrant` — the broker's port: the destination and the stores that hold it. 1.0.0 carries `grantType`, `expiresAt` and the `oidc*` / `saml*` fields; 1.1.0 adds `issuedFor` / `issuedBy`
-- **`@mcp-abap-adt/interfaces-auth-sap`** (`^2.0.0`): `IAuthorizationConfig` — the UAA client
-- **`@mcp-abap-adt/interfaces-auth`** (`^3.0.0`): `STORE_ERROR_CODES` and `StoreErrorCode` — the failure vocabulary, which means the same off SAP
+- **`@mcp-abap-adt/interfaces-auth-broker`** (`^1.3.0`): `IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `DestinationGrant` — the broker's port: the destination and the stores that hold it. 1.0.0 carries `grantType`, `expiresAt` and the `oidc*` / `saml*` fields; 1.1.0 adds `issuedFor` / `issuedBy`; 1.2.0 adds `getClientCertificate`
+- **`@mcp-abap-adt/interfaces-auth-sap`** (`^3.3.0`): `IAuthorizationConfig` — the UAA client
+- **`@mcp-abap-adt/interfaces-auth`** (`^7.5.0`): `STORE_ERROR_CODES` and `StoreErrorCode` — the failure vocabulary, which means the same off SAP
 - **`@mcp-abap-adt/interfaces-utils`** (`^1.1.0`): `ILogger`
 - **`dotenv`** (`^18.0.4`): parses `.env` files
 - **Not `@mcp-abap-adt/interfaces`**: that facade is **deleted** as of its 52.0.0. npm still serves 51.0.0 to anyone pinned to it, with every symbol re-exported and deprecated, and nothing further ships there — a consumer takes the package that declares the name
@@ -134,7 +136,8 @@ Every session store follows the same rules:
 - **The secret alone.** `saveSession` and `setConnectionConfig` take `authorizationToken`, `sessionCookies`, `expiresAt` (epoch ms), `refreshToken`, and what the credential is bound to, `issuedFor` and `issuedBy` (see *The binding*). A write carrying **any other field** — `serviceUrl`, `authType`, `grantType`, `username`, `password`, the `snc*`, `oidc*` and `saml*` fields, `sapClient`, `language`, `uaaUrl` / `uaaClientId` / `uaaClientSecret`, or a field no store knows — is refused with a `RefusedFieldsError` (code `INVALID_CONFIG`) whose message and `fields` name the fields, never a value. A field given as `undefined` is not carried.
 - **No serviceUrl.** A session needs none, and none is answered.
 - **No client.** `setAuthorizationConfig` always refuses (`IAuthorizationConfig` is the client, which is means); `getAuthorizationConfig` answers `null`. A refresh token is written through `saveSession`, and answered by `loadSession`.
-- **One secret kind at a time.** Writing a token clears stored cookies, and writing cookies clears the token. `expiresAt` is written and cleared with its credential: a new credential written without `expiresAt` does not keep the old one's. A credential given as `''` clears it, with its `expiresAt`; clearing the kind not held (`authorizationToken: ''` while cookies are stored) changes nothing. `expiresAt` must be a non-negative whole number of epoch milliseconds — what the file stores read back — anything else is refused. The refresh token is kept until a write gives another (`''` clears it).
+- **One secret kind at a time.** Writing a token clears stored cookies, and writing cookies clears the token. `expiresAt` is written and cleared with its credential: a new credential written without `expiresAt` does not keep the old one's. A credential given as `''` clears it, with its `expiresAt`; clearing the kind not held (`authorizationToken: ''` while cookies are stored) changes nothing. `expiresAt` must be a non-negative whole number of epoch milliseconds — what the file stores read back — anything else is refused.
+- **Clearing the refresh token: `refreshToken: ''`.** This is the one operation that removes a stored refresh token. A write with `refreshToken: ''` removes it — whatever else the write carries, a new access token included; a write with `refreshToken` omitted or `undefined` keeps the one stored; a write with another refresh token replaces it. So a consumer that obtained a new access token **without** a refresh token, where one was stored, writes `refreshToken: ''` beside the new token if the old refresh token must not be used again; leaving the field out keeps it. Every session store here — files and memory — does the same.
 - **The XSUAA stores hold a token.** They refuse cookies, and a write that would leave the session without a token.
 - **What is answered.** `loadSession`: the secret fields present — with `issuedFor` / `issuedBy` while a credential is held — or `null` when there are none. `getConnectionConfig`: the same without the refresh token, or `null`.
 - **A file store touches only its own keys.** A write sets or removes the secret keys and leaves every other line of the file — keys, comments, blank lines — byte for byte. `deleteSession` removes the secret keys, and the file only when no key is left.
@@ -708,9 +711,9 @@ Integration tests return at once, with a warning, if `test-config.yaml` is not c
 
 ## Dependencies
 
-- `@mcp-abap-adt/interfaces-auth-broker` (^1.1.0) - the store contracts (`IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `DestinationGrant`)
-- `@mcp-abap-adt/interfaces-auth-sap` (^2.0.0) - `IAuthorizationConfig`
-- `@mcp-abap-adt/interfaces-auth` (^3.0.0) - `STORE_ERROR_CODES`
+- `@mcp-abap-adt/interfaces-auth-broker` (^1.3.0) - the store contracts (`IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `DestinationGrant`)
+- `@mcp-abap-adt/interfaces-auth-sap` (^3.3.0) - `IAuthorizationConfig`
+- `@mcp-abap-adt/interfaces-auth` (^7.5.0) - `STORE_ERROR_CODES`
 - `@mcp-abap-adt/interfaces-utils` (^1.1.0) - `ILogger`
 - `dotenv` - Environment variable parsing
 

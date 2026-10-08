@@ -125,6 +125,13 @@ export abstract class SecretSessionStore implements ISessionStore {
     return isEmptySecret(secret) ? null : { ...secret };
   }
 
+  /**
+   * Merge a write into the stored secret (`applySecret`).
+   *
+   * `refreshToken: ''` is the operation that clears the stored refresh token —
+   * also beside a new access token; `refreshToken` omitted or `undefined`
+   * keeps the one stored; another value replaces it.
+   */
   async saveSession(destination: string, config: unknown): Promise<void> {
     await this.write(destination, config);
   }
