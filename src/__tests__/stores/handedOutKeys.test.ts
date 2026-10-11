@@ -250,7 +250,11 @@ describe('the errors', () => {
       'code',
       'name',
       'operation',
+      'reason=undefined',
     ]);
+    expect(
+      keysOf(new StorageError('read', 'm', undefined, 'record-format')),
+    ).toEqual(['cause=undefined', 'code', 'name', 'operation', 'reason']);
   });
 });
 

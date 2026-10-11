@@ -7,6 +7,11 @@
  * the file and written back to it. Every other line — the URL, the type, a
  * user and password, the client: means, read by `EnvDestinationStore` — is
  * left as it is.
+ *
+ * The binding is answered exactly as `SAP_ISSUED_FOR` / `SAP_ISSUED_BY` hold
+ * it. A file holding a token or cookies without both keys is not of this
+ * store's format and is refused (5.0.0); a file with no token and no cookies —
+ * the destination's means alone — is no session.
  */
 
 import * as path from 'node:path';
@@ -20,7 +25,6 @@ import { SecretSessionStore } from '../../session/SecretSessionStore';
 import type { SessionSecret } from '../../session/sessionSecret';
 import { withFileLock } from '../../storage/fileLock';
 import { ABAP_SESSION_VARS } from '../../utils/constants';
-import { ABAP_DESTINATION_VARS } from '../destination/EnvDestinationStore';
 
 const KEYS: SecretKeys = {
   authorizationToken: ABAP_SESSION_VARS.AUTHORIZATION_TOKEN,
@@ -29,12 +33,6 @@ const KEYS: SecretKeys = {
   refreshToken: ABAP_SESSION_VARS.REFRESH_TOKEN,
   issuedFor: ABAP_SESSION_VARS.ISSUED_FOR,
   issuedBy: ABAP_SESSION_VARS.ISSUED_BY,
-  legacy: {
-    serviceUrl: ABAP_DESTINATION_VARS.serviceUrl,
-    sapClient: ABAP_DESTINATION_VARS.sapClient,
-    uaaUrl: ABAP_DESTINATION_VARS.uaaUrl,
-    uaaClientId: ABAP_DESTINATION_VARS.uaaClientId,
-  },
 };
 
 export class EnvFileSessionStore extends SecretSessionStore {
@@ -51,9 +49,8 @@ export class EnvFileSessionStore extends SecretSessionStore {
 
   protected async readSecret(
     destination: string,
-    forWrite = false,
   ): Promise<SessionSecret | null> {
-    return readFileSecret(this.envFilePath, KEYS, destination, forWrite);
+    return readFileSecret(this.envFilePath, KEYS, this.storeName, destination);
   }
 
   protected override async exclusive<T>(

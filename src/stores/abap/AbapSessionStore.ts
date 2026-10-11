@@ -21,7 +21,6 @@ import type { SessionSecret } from '../../session/sessionSecret';
 import { assertDestinationName } from '../../storage/destinationName';
 import { withFileLock } from '../../storage/fileLock';
 import { ABAP_SESSION_VARS } from '../../utils/constants';
-import { ABAP_DESTINATION_VARS } from '../destination/EnvDestinationStore';
 
 const KEYS: SecretKeys = {
   authorizationToken: ABAP_SESSION_VARS.AUTHORIZATION_TOKEN,
@@ -30,12 +29,6 @@ const KEYS: SecretKeys = {
   refreshToken: ABAP_SESSION_VARS.REFRESH_TOKEN,
   issuedFor: ABAP_SESSION_VARS.ISSUED_FOR,
   issuedBy: ABAP_SESSION_VARS.ISSUED_BY,
-  legacy: {
-    serviceUrl: ABAP_DESTINATION_VARS.serviceUrl,
-    sapClient: ABAP_DESTINATION_VARS.sapClient,
-    uaaUrl: ABAP_DESTINATION_VARS.uaaUrl,
-    uaaClientId: ABAP_DESTINATION_VARS.uaaClientId,
-  },
 };
 
 /**
@@ -72,13 +65,12 @@ export class AbapSessionStore extends SecretSessionStore {
 
   protected async readSecret(
     destination: string,
-    forWrite = false,
   ): Promise<SessionSecret | null> {
     return readFileSecret(
       this.fileOf(destination),
       KEYS,
+      this.storeName,
       destination,
-      forWrite,
     );
   }
 

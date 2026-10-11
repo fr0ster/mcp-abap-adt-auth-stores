@@ -14,6 +14,7 @@ export {
   ParseError,
   RefusedFieldsError,
   StorageError,
+  type StorageProblem,
   StoreError,
 } from './errors/StoreErrors';
 // Loaders

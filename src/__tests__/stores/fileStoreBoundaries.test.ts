@@ -7,8 +7,9 @@
  * - A JavaScript caller still passing 2.x's `defaultServiceUrl` where the
  *   logger now goes gets a clear error at construction, not a failure on the
  *   first log line.
- * - A malformed `SAP_EXPIRES_AT` is reported by reads, and overwritten by the
- *   next write instead of blocking it.
+ * - A malformed `SAP_EXPIRES_AT` makes the record not of the store's format
+ *   (5.0.0): refused by reads and by a partial write, replaced by a write of a
+ *   new credential (`sessionRecordFormat.test.ts` covers every rule).
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -127,15 +128,17 @@ describe('a 2.x defaultServiceUrl where the logger now goes', () => {
 });
 
 describe('a malformed SAP_EXPIRES_AT', () => {
-  it('is reported by a read, and overwritten by the next write', async () => {
+  const MALFORMED =
+    'SAP_URL=u\nSAP_JWT_TOKEN=old\nSAP_ISSUED_FOR=\nSAP_ISSUED_BY=\nSAP_EXPIRES_AT=soon\n';
+
+  it('is refused by a read, and replaced by a write of a new credential', async () => {
     const file = path.join(dir, 'D.env');
-    fs.writeFileSync(
-      file,
-      'SAP_URL=u\nSAP_JWT_TOKEN=old\nSAP_EXPIRES_AT=soon\n',
-    );
+    fs.writeFileSync(file, MALFORMED);
     const store = new AbapSessionStore(dir);
 
-    await expect(store.loadSession('D')).rejects.toBeInstanceOf(StorageError);
+    const refused = await store.loadSession('D').catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(StorageError);
+    expect((refused as StorageError).reason).toBe('record-format');
 
     await store.saveSession('D', {
       authorizationToken: 'new',
@@ -148,16 +151,14 @@ describe('a malformed SAP_EXPIRES_AT', () => {
     expect(fs.readFileSync(file, 'utf8')).toMatch(/^SAP_URL=u$/m);
   });
 
-  it('does not block a write that leaves the credential alone', async () => {
-    fs.writeFileSync(
-      path.join(dir, 'D.env'),
-      'SAP_JWT_TOKEN=old\nSAP_EXPIRES_AT=soon\n',
-    );
+  it('refuses a write that leaves the credential alone, the file unchanged', async () => {
+    const file = path.join(dir, 'D.env');
+    fs.writeFileSync(file, MALFORMED);
     const store = new AbapSessionStore(dir);
-    await store.saveSession('D', { refreshToken: 'R' });
-    expect(await store.loadSession('D')).toEqual({
-      authorizationToken: 'old',
-      refreshToken: 'R',
-    });
+    const refused = await store
+      .saveSession('D', { refreshToken: 'R' })
+      .catch((e: unknown) => e);
+    expect((refused as StorageError).reason).toBe('record-format');
+    expect(fs.readFileSync(file, 'utf8')).toBe(MALFORMED);
   });
 });

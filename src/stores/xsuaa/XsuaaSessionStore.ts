@@ -22,7 +22,6 @@ import type { SessionSecret } from '../../session/sessionSecret';
 import { assertDestinationName } from '../../storage/destinationName';
 import { withFileLock } from '../../storage/fileLock';
 import { XSUAA_SESSION_VARS } from '../../utils/constants';
-import { XSUAA_DESTINATION_VARS } from '../destination/EnvDestinationStore';
 
 const KEYS: SecretKeys = {
   authorizationToken: XSUAA_SESSION_VARS.AUTHORIZATION_TOKEN,
@@ -30,12 +29,6 @@ const KEYS: SecretKeys = {
   refreshToken: XSUAA_SESSION_VARS.REFRESH_TOKEN,
   issuedFor: XSUAA_SESSION_VARS.ISSUED_FOR,
   issuedBy: XSUAA_SESSION_VARS.ISSUED_BY,
-  legacy: {
-    serviceUrl: XSUAA_DESTINATION_VARS.serviceUrl,
-    sapClient: XSUAA_DESTINATION_VARS.sapClient,
-    uaaUrl: XSUAA_DESTINATION_VARS.uaaUrl,
-    uaaClientId: XSUAA_DESTINATION_VARS.uaaClientId,
-  },
 };
 
 /**
@@ -72,13 +65,12 @@ export class XsuaaSessionStore extends SecretSessionStore {
 
   protected async readSecret(
     destination: string,
-    forWrite = false,
   ): Promise<SessionSecret | null> {
     return readFileSecret(
       this.fileOf(destination),
       KEYS,
+      this.storeName,
       destination,
-      forWrite,
     );
   }
 

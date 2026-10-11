@@ -67,17 +67,34 @@ export class InvalidConfigError extends StoreError {
 }
 
 /**
+ * Why a storage operation failed, when the store names it.
+ *
+ * `record-format` (5.0.0): the stored session record is not of the store's
+ * format — a session store validates the record it holds, and refuses one its
+ * writer would never have produced, as a whole.
+ */
+export type StorageProblem = 'record-format';
+
+/**
  * Error thrown when storage operations fail (file write, permission denied, etc.)
  */
 export class StorageError extends StoreError {
   public readonly operation: string;
   public override readonly cause?: Error | undefined;
+  /** Set when the store names why; absent for an I/O failure. */
+  public readonly reason?: StorageProblem | undefined;
 
-  constructor(operation: string, message: string, cause?: Error) {
+  constructor(
+    operation: string,
+    message: string,
+    cause?: Error,
+    reason?: StorageProblem,
+  ) {
     super(message, STORE_ERROR_CODES.STORAGE_ERROR);
     this.name = 'StorageError';
     this.operation = operation;
     this.cause = cause;
+    this.reason = reason;
     Object.setPrototypeOf(this, StorageError.prototype);
   }
 }
