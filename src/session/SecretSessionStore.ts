@@ -20,6 +20,7 @@ import type { IAuthorizationConfig } from '@mcp-abap-adt/interfaces-auth-sap';
 import type { ILogger } from '@mcp-abap-adt/interfaces-utils';
 import { InvalidConfigError, RefusedFieldsError } from '../errors/StoreErrors';
 import { formatToken } from '../utils/formatting';
+import { isRecordFormatError } from './fileSecret';
 import {
   applySecret,
   carriedFields,
@@ -43,7 +44,8 @@ export interface SecretSessionStoreOptions {
 
 export abstract class SecretSessionStore implements ISessionStore {
   protected readonly log?: ILogger | undefined;
-  private readonly storeName: string;
+  /** The store's name, for messages. */
+  protected readonly storeName: string;
   private readonly tokenOnly: boolean;
 
   /** Writes in flight, per destination: each waits for the one before. */
@@ -57,12 +59,11 @@ export abstract class SecretSessionStore implements ISessionStore {
   }
 
   /**
-   * The stored secret, or null when there is none. `forWrite`: read for a
-   * write, which replaces a malformed expiry instead of failing on it.
+   * The stored secret, or null when there is none. A file store refuses a
+   * record not of its format (`StorageError`, reason `record-format`).
    */
   protected abstract readSecret(
     destination: string,
-    forWrite?: boolean,
   ): Promise<SessionSecret | null>;
 
   /**
@@ -190,7 +191,7 @@ export abstract class SecretSessionStore implements ISessionStore {
     destination: string,
     write: SessionSecret,
   ): Promise<void> {
-    const current = (await this.readSecret(destination, true)) ?? {};
+    const current = await this.currentFor(destination, write);
     const next = applySecret(current, write, this.storeName, destination);
     if (this.tokenOnly && !next.authorizationToken) {
       throw new InvalidConfigError(
@@ -203,6 +204,34 @@ export abstract class SecretSessionStore implements ISessionStore {
       `Session saved for ${destination}: ${describeSecret(next)}`,
     );
   }
+
+  /**
+   * The stored secret a write merges into. A record not of the store's format
+   * (5.0.0) is replaced by a write that replaces the whole secret — merged
+   * into nothing, so nothing of it is carried — and refuses any other write
+   * with the read's own error, the record left as it is: a partial write
+   * would compose with a record the store cannot read.
+   */
+  private async currentFor(
+    destination: string,
+    write: SessionSecret,
+  ): Promise<SessionSecret> {
+    try {
+      return (await this.readSecret(destination)) ?? {};
+    } catch (error) {
+      if (isRecordFormatError(error) && replacesWhole(write)) return {};
+      throw error;
+    }
+  }
+}
+
+/**
+ * Whether a write replaces the whole secret: it carries a new credential (a
+ * token or cookies), whose binding, expiry and refresh token are what the
+ * write gives or nothing — so it needs nothing of the stored record.
+ */
+function replacesWhole(write: SessionSecret): boolean {
+  return !!(write.authorizationToken || write.sessionCookies);
 }
 
 /**

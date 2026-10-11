@@ -7,38 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [5.0.0] - 2026-10-11
 
-A store answers only the binding it holds: no store composes a binding for a
-session file that states none.
+A file session store validates the record it holds against its own format, and
+refuses one that is not of it as a whole.
 
 ### Migration
 
-- **Who is affected:** a session file with a credential and no binding keys —
-  written by auth-stores 2.x or 3.0.0, by auth-broker 3.x, or by hand. 3.1.0–4.0.0
-  answered a binding composed from the means keys beside the credential;
-  5.0.0 answers none, so auth-broker refuses that credential or logs in again.
+- **Who is affected:** a session file whose record is not of its store's
+  format — above all a credential (a token or cookies) without both binding
+  keys beside it: a file written by auth-stores 2.x or 3.0.0, by auth-broker
+  3.x, or by hand. 3.1.0–4.0.0 answered such a credential with a binding
+  composed from the means keys beside it; 5.0.0 refuses the record with a
+  `StorageError` (`reason: 'record-format'`). Where auth-broker 5.0.1 reads
+  the session (a first build of a destination's provider, except
+  `client_credentials`; a handed-over credential; the consumer-provider path),
+  it passes that error unchanged to the caller of `getProvider` / `getToken`
+  — it does not turn it into "no session" and a new login.
 - **What to do:** regenerate the session with `mcp-auth`, which always writes
   `SAP_ISSUED_FOR` / `SAP_ISSUED_BY` (or `XSUAA_ISSUED_FOR` /
-  `XSUAA_ISSUED_BY`): `mcp-auth --service-key <key.json> --output <file>`, or
-  `mcp-auth --destination <name>`.
-- **Consumers of the store API:** nothing changes in the signatures; only what
-  a store answers for such a file.
+  `XSUAA_ISSUED_BY`):
+  `mcp-auth --service-key <key.json> --output <file> --type abap|xsuaa`, or
+  `mcp-auth --destination <name> --type abap|xsuaa`. Writing a new credential
+  through the store (`saveSession` with a token or cookies) also replaces the
+  record; deleting the session (`deleteSession`) removes it.
+- **A consumer that catches store errors:** a refused record is a
+  `StorageError` with `reason === 'record-format'` (code `STORAGE_ERROR`); an
+  I/O failure has no `reason`. Nothing else in the signatures changes.
+- **Files written by auth-stores 3.1.0 or later through a store** are of the
+  format and read as before.
 
 ### Changed
 
-- **Breaking: no legacy binding composition.** `AbapSessionStore`,
-  `XsuaaSessionStore` and `EnvFileSessionStore` answer `issuedFor` /
-  `issuedBy` exactly as the file holds them — a non-empty key is answered, an
-  absent or empty key is not. Nothing is composed from `SAP_URL` (+
-  `SAP_CLIENT`), `SAP_UAA_URL` + `SAP_UAA_CLIENT_ID`, or their `XSUAA_*`
-  counterparts, whether one binding key is present or none. Why: a store only
-  stores and returns secrets; it never composes, guesses or validates a
-  binding. Session files come from `mcp-auth`, which always writes the binding,
-  and a credential without a valid binding is auth-broker's to refuse.
-- A write leaves the binding exactly as the writer passed it; a write that
-  passes none adds no binding (both keys are written empty beside a
-  credential, as since 3.1.0, and an empty key reads as none).
-- Internal: `SecretKeys.legacy` and the composition in `fileSecret.ts` are
-  removed.
+- **Breaking: a store validates its record.** `AbapSessionStore`,
+  `XsuaaSessionStore` and `EnvFileSessionStore` read a record only when it is
+  what their writer always produces:
+  - beside a token or cookies, both binding keys — present even when empty;
+    an empty key is "no binding";
+  - a token or cookies, never both;
+  - the expiry, when present, decimal epoch milliseconds (a safe integer);
+  - the cookies, when present, the writer's base64.
+
+  Any other record is refused as a whole — nothing answered, nothing guessed,
+  nothing composed — with a `StorageError` in fixed words naming the store
+  and the destination, `<Store>: the stored session for "<destination>" is
+  not in this store's format; regenerate it with mcp-auth`; never a value of
+  the record. A file with no token and no cookies holds no credential to bind:
+  a file holding only the destination's means is no session (`null`), and a
+  refresh token alone is answered as it is. Why: the store is the only one
+  with access to the record, so it decides whether the record is its own; the
+  credential's validity stays the target system's, and whether a binding
+  matches the destination stays auth-broker's.
+- **Breaking: no legacy binding composition.** Nothing is composed from
+  `SAP_URL` (+ `SAP_CLIENT`), `SAP_UAA_URL` + `SAP_UAA_CLIENT_ID`, or their
+  `XSUAA_*` counterparts; the binding is answered exactly as the keys hold it.
+- **Writes onto a malformed record.** A write of a new credential (a token or
+  cookies) replaces the whole secret and proceeds; nothing of the old record is
+  carried, its refresh token included. Any other write (only the expiry, a
+  refresh token, a binding, clearing a credential) is refused with the same
+  error and leaves the file byte for byte. Before, a malformed expiry was
+  dropped silently by any write.
+- `StorageError` gains `reason?: StorageProblem` (`'record-format'`), exported
+  with the type; it is an own key, `undefined` when not given.
+- Internal: `SecretKeys.legacy`, the composition in `fileSecret.ts` and the
+  `forWrite` read are removed; `readFileSecret` takes the store's name.
 
 ## [4.0.0] - 2026-10-08
 

@@ -139,7 +139,7 @@ Every session store follows the same rules:
 - **One secret kind at a time.** Writing a token clears stored cookies, and writing cookies clears the token. `expiresAt` is written and cleared with its credential: a new credential written without `expiresAt` does not keep the old one's. A credential given as `''` clears it, with its `expiresAt`; clearing the kind not held (`authorizationToken: ''` while cookies are stored) changes nothing. `expiresAt` must be a non-negative whole number of epoch milliseconds — what the file stores read back — anything else is refused.
 - **Clearing the refresh token: `refreshToken: ''`.** This is the one operation that removes a stored refresh token. A write with `refreshToken: ''` removes it — whatever else the write carries, a new access token included; a write with `refreshToken` omitted or `undefined` keeps the one stored; a write with another refresh token replaces it. So a consumer that obtained a new access token **without** a refresh token, where one was stored, writes `refreshToken: ''` beside the new token if the old refresh token must not be used again; leaving the field out keeps it. Every session store here — files and memory — does the same.
 - **The XSUAA stores hold a token.** They refuse cookies, and a write that would leave the session without a token.
-- **What is answered.** `loadSession`: the secret fields present — with `issuedFor` / `issuedBy` while a credential is held — or `null` when there are none. `getConnectionConfig`: the same without the refresh token, or `null`.
+- **What is answered.** `loadSession`: the secret fields present — with `issuedFor` / `issuedBy` while a credential is held — or `null` when there are none. `getConnectionConfig`: the same without the refresh token, or `null`. A file store answers only a record of its own format, and refuses any other with a `StorageError` (`record-format`; see *The store validates its record*).
 - **A file store touches only its own keys.** A write sets or removes the secret keys and leaves every other line of the file — keys, comments, blank lines — byte for byte. `deleteSession` removes the secret keys, and the file only when no key is left.
 - **The binding** — see below.
 - Constructors: `AbapSessionStore(directory, log?)`, `XsuaaSessionStore(directory, log?)`, `EnvFileSessionStore(envFilePath, log?)`, `SafeAbapSessionStore(log?)`, `SafeXsuaaSessionStore(log?)`. File stores create their directory if it is missing. A string where the logger goes — 2.x's `defaultServiceUrl`, passed by a JavaScript caller — throws a `TypeError` at construction saying so.
@@ -159,11 +159,31 @@ They follow the credential, extending the rules above:
 
 **A custom `ISessionStore`** (a database, a message log, a secret store) must persist both fields beside the secret. One that drops them still type-checks, but the broker then never uses its sessions — every process start logs in afresh, a browser each time for an interactive grant.
 
-#### Only what was written
+#### The store validates its record (5.0.0)
 
-**A store only stores (5.0.0).** It answers `issuedFor` / `issuedBy` exactly as the file holds them — a non-empty key is answered, an absent or empty key is not — and composes, guesses or validates nothing: the URL, the client and the UAA keys beside a credential are means, never read as its binding. A write leaves the binding exactly as the writer passed it; a write that passes none adds none.
+A session store encapsulates storing the secret — a file here, a database or anything else in a custom store — and is the only one with access to the stored record. So **the store validates the stored record against its own format**, and refuses a record that is not of it **as a whole**: nothing is answered, nothing is guessed, nothing is composed from other keys of the file. Whether the credential itself is valid is the target system's or the identity provider's to say; whether a written binding matches the destination stays auth-broker's.
 
-A session file written without binding keys — by auth-stores 2.x or 3.0.0, auth-broker 3.x, or by hand — therefore answers no binding, and auth-broker refuses its credential or logs in again. Regenerate such a session with `mcp-auth`, which always writes `SAP_ISSUED_FOR` / `SAP_ISSUED_BY` (or `XSUAA_ISSUED_*`): `mcp-auth --service-key <key.json> --output <file>`, or `mcp-auth --destination <name>`. 3.1.0–4.x stores composed a binding for such a file from its means keys; 5.0.0 no longer does (see the CHANGELOG's migration note).
+The format of the file stores (`AbapSessionStore`, `EnvFileSessionStore`, `XsuaaSessionStore`) is what their writer always produces:
+
+- **beside a token or cookies, both binding keys** — `SAP_ISSUED_FOR` and `SAP_ISSUED_BY` (`XSUAA_ISSUED_FOR` / `XSUAA_ISSUED_BY`), present even when empty; an empty key means "no binding";
+- **a token or cookies, never both**;
+- **`SAP_EXPIRES_AT` / `XSUAA_EXPIRES_AT`**, when present, decimal epoch milliseconds (a safe integer);
+- **`SAP_SESSION_COOKIES_B64`**, when present, the writer's base64.
+
+A file with no token and no cookies holds no credential to bind: a file holding only the destination's means (an `--env` file) is no session, not an error, and a refresh token alone is answered as it is. An empty key reads as absent. Only plain code runs over the record.
+
+A record not of the format is refused with a **`StorageError`** — code `STORAGE_ERROR`, `reason: 'record-format'`, `operation: 'read'` — in fixed words naming the store and the destination: `<Store>: the stored session for "<destination>" is not in this store's format; regenerate it with mcp-auth`. No value of the record — no token, no URL — and no path is in it.
+
+On a write over such a record: a write of a **new credential** (a token or cookies) replaces the whole secret and proceeds — nothing of the old record is carried, its refresh token included — and the result is a valid record; any **other write** (only `expiresAt`, a refresh token, a binding, clearing a credential) is refused with the same error and leaves the file byte for byte. `deleteSession` removes the record's keys as always.
+
+A session file written without binding keys — by auth-stores 2.x or 3.0.0, auth-broker 3.x, or by hand — is therefore refused. Regenerate it with `mcp-auth`, which always writes the binding keys:
+
+```bash
+mcp-auth --service-key <key.json> --output <file> --type abap   # or --type xsuaa
+mcp-auth --destination <name> --type abap                       # or --type xsuaa
+```
+
+3.1.0–4.x stores composed a binding for such a file from its means keys; 5.0.0 neither composes one nor answers the credential without it (see the CHANGELOG's migration note).
 
 ## Usage
 
@@ -346,7 +366,7 @@ A file written by auth-stores 2.x (or auth-broker 3.x) holds means and secret to
 | `SAP_JWT_TOKEN`, `SAP_SESSION_COOKIES_B64`, `SAP_REFRESH_TOKEN` (and the new `SAP_EXPIRES_AT`, and 3.1.0's `SAP_ISSUED_FOR` / `SAP_ISSUED_BY`) | secret | the session store |
 | `SAP_URL`, `SAP_AUTH_TYPE`, `SAP_USERNAME`, `SAP_PASSWORD`, `SAP_SNC_*`, `SAP_UAA_URL`, `SAP_UAA_CLIENT_ID`, `SAP_UAA_CLIENT_SECRET`, `SAP_CLIENT`, `SAP_LANGUAGE` | means | `EnvDestinationStore`, pointed at the same directory |
 
-A session write rewrites only the secret keys, so a 2.x file stays a complete 2.x file. Such a file states no binding key, so it answers no binding (see *Only what was written*): regenerate the session with `mcp-auth`. A 2.x `basic` or `snc` file is a complete destination as it is. A 2.x `jwt` or `saml` file states no grant — 2.x never wrote one — so add `SAP_GRANT_TYPE` (by hand, or through `setDestination`). A 3.x public-client file (`mcp-sso` stripped its `__public__` secret line) has no `SAP_UAA_CLIENT_SECRET`; from 3.2.0 its client is answered with the secret `''`, a public client, as it is. A file without `SAP_AUTH_TYPE` read with a service key fallback takes the key's `jwt` — see *Infers nothing* above.
+A session write rewrites only the secret keys, so a 2.x file stays a complete 2.x file. Its credential has no binding keys beside it, so a session store refuses the record (`StorageError`, `record-format`; see *The store validates its record*): regenerate the session with `mcp-auth`, or write a new credential, which replaces the secret keys and leaves the means lines as they are. A 2.x `basic` or `snc` file is a complete destination as it is. A 2.x `jwt` or `saml` file states no grant — 2.x never wrote one — so add `SAP_GRANT_TYPE` (by hand, or through `setDestination`). A 3.x public-client file (`mcp-sso` stripped its `__public__` secret line) has no `SAP_UAA_CLIENT_SECRET`; from 3.2.0 its client is answered with the secret `''`, a public client, as it is. A file without `SAP_AUTH_TYPE` read with a service key fallback takes the key's `jwt` — see *Infers nothing* above.
 
 ### BTP / XSUAA stores
 
@@ -479,7 +499,7 @@ try {
 - **`FileNotFoundError`** - Service key file not found (includes `filePath`)
 - **`ParseError`** - JSON parsing failed or invalid format (includes `filePath` and `cause`). From 3.3.0 the service key stores (`AbapServiceKeyStore`, `XsuaaServiceKeyStore`) raise it in fixed words naming the destination, with no `filePath` and no `cause`: an underlying message may quote the file (Node's `JSON.parse` does), and a key file holds a client secret or a private key
 - **`InvalidConfigError`** - Required configuration fields missing (includes `missingFields` array)
-- **`StorageError`** - File read, write or permission error (includes `operation` and `cause`); a session file that exists but cannot be read raises it — only a missing file is `null`
+- **`StorageError`** - File read, write or permission error (includes `operation` and `cause`); a session file that exists but cannot be read raises it — only a missing file is `null`. From 5.0.0 also a session record not of its store's format: `reason: 'record-format'`, fixed words naming the store and the destination, never a value of the record (see *The store validates its record*); `reason` is absent for an I/O failure
 - **`RefusedFieldsError`** (code `INVALID_CONFIG`) - A write carried fields the store does not hold: means given to a session store, a secret given to `EnvDestinationStore` (includes `fields`; the message names fields, never values)
 - **`ClientCertificateError`** (code `INVALID_CONFIG`, 3.3.0) - A destination's client certificate cannot be answered (includes `reason`: `incomplete`, `mixed` or `unreadable`, and `variables`: the env keys — `EnvDestinationStore`, all three reasons — or the service key's fields — `XsuaaServiceKeyStore`, `incomplete` only). The message is fixed words naming the destination and those names — never a value, a path, a file's content or a certificate.
 
@@ -689,7 +709,7 @@ Integration tests return at once, with a warning, if `test-config.yaml` is not c
 - Every write is atomic: a temporary file of the writer's own (`<file>.<pid>.<random>.tmp`, created exclusively, removed on failure), then a rename
 - A new file is created `0600`; an existing one is narrowed to its owner's bits on every rewrite (`mode & 0o600`: a 2.x `0644` file becomes `0600`), never widened
 - **Concurrent writers lose nothing.** Writes for one destination run one after another within a store instance. Across instances and processes, every writer of a `.env` file — a session store's secret, `EnvDestinationStore`'s means, `deleteSession`, `deleteDestination` — holds an advisory lock, `<file>.lock` (created exclusively), from its read to its rename. A live lock is waited for, retrying, up to 10 s, then the write fails with a `StorageError` naming the file; a lock older than 30 s is a crashed holder's and is taken over. Readers take no lock: a rename is atomic. A writer that does not take the lock (2.x, an editor) is not excluded — its own `<file>.tmp` is never touched, but its rename may replace a concurrent 3.0 write
-- A malformed `SAP_EXPIRES_AT` is reported by reads (`StorageError`) and replaced by the next write instead of blocking it
+- A record not of the store's format — a malformed `SAP_EXPIRES_AT` among them — is refused by reads and by a partial write (`StorageError`, `record-format`), and replaced by a write of a new credential
 - A file that exists but cannot be read raises a `StorageError`; only a missing file is "nothing stored"
 
 ### Store Implementation

@@ -9,7 +9,9 @@
  * left as it is.
  *
  * The binding is answered exactly as `SAP_ISSUED_FOR` / `SAP_ISSUED_BY` hold
- * it; a file without them answers none (5.0.0).
+ * it. A file holding a token or cookies without both keys is not of this
+ * store's format and is refused (5.0.0); a file with no token and no cookies —
+ * the destination's means alone — is no session.
  */
 
 import * as path from 'node:path';
@@ -47,9 +49,8 @@ export class EnvFileSessionStore extends SecretSessionStore {
 
   protected async readSecret(
     destination: string,
-    forWrite = false,
   ): Promise<SessionSecret | null> {
-    return readFileSecret(this.envFilePath, KEYS, destination, forWrite);
+    return readFileSecret(this.envFilePath, KEYS, this.storeName, destination);
   }
 
   protected override async exclusive<T>(

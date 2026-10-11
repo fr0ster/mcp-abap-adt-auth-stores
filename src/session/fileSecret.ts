@@ -15,38 +15,74 @@ export interface SecretKeys {
   refreshToken: string;
   /**
    * What the credential is bound to (3.1.0), answered exactly as written: a
-   * non-empty key is answered, an absent or empty one is not. Nothing is
-   * composed from other keys of the file (5.0.0).
+   * non-empty key is answered, an empty one is not. Nothing is composed from
+   * other keys of the file. Beside a token or cookies both keys are part of
+   * the record's format (5.0.0): `writeFileSecret` always writes them there.
    */
   issuedFor: string;
   issuedBy: string;
 }
 
-/** The binding the file states — exactly as written, nothing composed. */
-function readBinding(
-  vars: Record<string, string>,
-  keys: SecretKeys,
-  secret: SessionSecret,
-): void {
-  if (!secret.authorizationToken && !secret.sessionCookies) return;
-  // Answered exactly as written: a binding is compared as a string, so the
-  // file must not change it (an empty key is "cleared").
-  const issuedFor = vars[keys.issuedFor];
-  if (issuedFor) secret.issuedFor = issuedFor;
-  const issuedBy = vars[keys.issuedBy];
-  if (issuedBy) secret.issuedBy = issuedBy;
+/**
+ * The store's refusal of a record not of its format (5.0.0): fixed words
+ * naming the store and the destination — never a value of the record, which
+ * holds secrets and URLs.
+ */
+export function recordFormatError(
+  holder: string,
+  destination: string,
+): StorageError {
+  return new StorageError(
+    'read',
+    `${holder}: the stored session for "${destination}" is not in this store's format; regenerate it with mcp-auth`,
+    undefined,
+    'record-format',
+  );
 }
 
-/** The secret a file holds, or null when there is no file. */
+/** Whether a thrown value is a store's `record-format` refusal. */
+export function isRecordFormatError(error: unknown): boolean {
+  return error instanceof StorageError && error.reason === 'record-format';
+}
+
+/** Decimal digits only, at least one: what `String(expiresAt)` writes. */
+function isDigits(text: string): boolean {
+  if (text.length === 0) return false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c < 48 || c > 57) return false;
+  }
+  return true;
+}
+
+/** Whether `encoded` is exactly what the writer's base64 produces. */
+function isWrittenBase64(encoded: string): boolean {
+  return Buffer.from(encoded, 'base64').toString('base64') === encoded;
+}
+
+/**
+ * The secret a file holds, or null when there is no file.
+ *
+ * The store validates its record against the format its writer
+ * (`writeFileSecret`) always produces, and refuses one that is not of it as a
+ * whole — nothing answered, nothing guessed (5.0.0):
+ *
+ * - a token or cookies, never both;
+ * - beside a token or cookies, both binding keys present (empty is "no
+ *   binding");
+ * - `expiresAt`, when present, decimal epoch milliseconds (a safe integer);
+ * - cookies, when present, the writer's base64.
+ *
+ * A file with no token and no cookies holds no credential to bind: its refresh
+ * token and expiry are answered as they are, and a file holding none of the
+ * store's keys is no session. An empty key reads as absent. Only plain code
+ * runs over the record.
+ */
 export function readFileSecret(
   filePath: string,
   keys: SecretKeys,
+  holder: string,
   destination: string,
-  /**
-   * For a write: a malformed expiry is ignored, so the write replaces it
-   * instead of failing on it. A read reports it.
-   */
-  forWrite = false,
 ): SessionSecret | null {
   let vars: Record<string, string> | null;
   try {
@@ -62,29 +98,43 @@ export function readFileSecret(
     );
   }
   if (vars === null) return null;
-  const secret: SessionSecret = {};
-  const token = vars[keys.authorizationToken]?.trim();
-  if (token) secret.authorizationToken = token;
-  if (keys.sessionCookies) {
-    const encoded = vars[keys.sessionCookies]?.trim();
-    if (encoded) {
-      secret.sessionCookies = Buffer.from(encoded, 'base64').toString('utf8');
-    }
+  const record = vars;
+  const has = (key: string) => typeof record[key] === 'string';
+  const token = record[keys.authorizationToken]?.trim();
+  const encoded = keys.sessionCookies
+    ? record[keys.sessionCookies]?.trim()
+    : undefined;
+  if (token && encoded) throw recordFormatError(holder, destination);
+  if ((token || encoded) && !(has(keys.issuedFor) && has(keys.issuedBy))) {
+    throw recordFormatError(holder, destination);
   }
-  readBinding(vars, keys, secret);
-  const expiresAt = vars[keys.expiresAt]?.trim();
+  const expiresAt = record[keys.expiresAt]?.trim();
+  let expiry: number | undefined;
   if (expiresAt) {
-    const value = Number(expiresAt);
-    if (!/^\d+$/.test(expiresAt) || !Number.isSafeInteger(value)) {
-      if (forWrite) return withoutExpiry(secret, vars, keys);
-      throw new StorageError(
-        'read',
-        `Cannot read the session for "${destination}": ${keys.expiresAt} is not epoch milliseconds`,
-      );
+    expiry = Number(expiresAt);
+    if (!isDigits(expiresAt) || !Number.isSafeInteger(expiry)) {
+      throw recordFormatError(holder, destination);
     }
-    secret.expiresAt = value;
   }
-  const refresh = vars[keys.refreshToken]?.trim();
+  if (encoded && !isWrittenBase64(encoded)) {
+    throw recordFormatError(holder, destination);
+  }
+
+  const secret: SessionSecret = {};
+  if (token) secret.authorizationToken = token;
+  if (encoded) {
+    secret.sessionCookies = Buffer.from(encoded, 'base64').toString('utf8');
+  }
+  if (token || encoded) {
+    // Answered exactly as written: a binding is compared as a string, so the
+    // store must not change it (an empty key is "no binding").
+    const issuedFor = record[keys.issuedFor];
+    if (issuedFor) secret.issuedFor = issuedFor;
+    const issuedBy = record[keys.issuedBy];
+    if (issuedBy) secret.issuedBy = issuedBy;
+  }
+  if (expiry !== undefined) secret.expiresAt = expiry;
+  const refresh = record[keys.refreshToken]?.trim();
   if (refresh) secret.refreshToken = refresh;
   return secret;
 }
@@ -118,15 +168,4 @@ export function writeFileSecret(
   if (removesOnly && !fs.existsSync(filePath)) return;
   rewriteEnvKeys(filePath, updates);
   if (!hasAnyKey(filePath)) fs.rmSync(filePath, { force: true });
-}
-
-/** The rest of the secret, when the expiry cannot be read (for a write). */
-function withoutExpiry(
-  secret: SessionSecret,
-  vars: Record<string, string>,
-  keys: SecretKeys,
-): SessionSecret {
-  const refresh = vars[keys.refreshToken]?.trim();
-  if (refresh) secret.refreshToken = refresh;
-  return secret;
 }

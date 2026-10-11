@@ -65,13 +65,12 @@ export class AbapSessionStore extends SecretSessionStore {
 
   protected async readSecret(
     destination: string,
-    forWrite = false,
   ): Promise<SessionSecret | null> {
     return readFileSecret(
       this.fileOf(destination),
       KEYS,
+      this.storeName,
       destination,
-      forWrite,
     );
   }
 

@@ -1,18 +1,21 @@
 /**
- * 2.x session files keep being read, and stay 2.x files (3.0.0).
+ * A 2.x session file is not of the session stores' format (5.0.0).
  *
- * A 2.x `<destination>.env` holds means and secret together. The session store
- * answers only the secret keys of such a file — no binding, since it states
- * none and a store composes nothing (5.0.0; `sessionBinding.test.ts`) — and a
- * session write rewrites only the secret and binding keys: every other line —
- * the URL, the type, the client, the SNC settings, a comment, a key this
- * package does not know — is left byte for byte, so the destination store can
- * still read the means from the same file.
+ * A 2.x `<destination>.env` holds means and secret together, and its credential
+ * carries no binding keys — the ABAP fixture even a token and cookies at once.
+ * The session store refuses its record as a whole (`StorageError`,
+ * `record-format`; `sessionRecordFormat.test.ts`), and a partial write leaves
+ * it as it is. A write of a new credential replaces the secret and rewrites
+ * only the secret and binding keys: every other line — the URL, the type, the
+ * client, the SNC settings, a comment, a key this package does not know — is
+ * left byte for byte, so the destination store can still read the means from
+ * the same file.
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { ISessionStore } from '@mcp-abap-adt/interfaces-auth-broker';
+import { StorageError } from '../../errors/StoreErrors';
 import { AbapSessionStore } from '../../stores/abap/AbapSessionStore';
 import { EnvFileSessionStore } from '../../stores/env/EnvFileSessionStore';
 import { XsuaaSessionStore } from '../../stores/xsuaa/XsuaaSessionStore';
@@ -86,12 +89,6 @@ describe.each([
     make: (dir: string): ISessionStore => new AbapSessionStore(dir),
     fixture: ABAP_2X,
     secret: ABAP_SECRET,
-    stored: {
-      authorizationToken: 'old-token',
-      sessionCookies: COOKIES,
-      refreshToken: 'old-refresh',
-      expiresAt: 1_800_000_000_000,
-    },
   },
   {
     name: 'EnvFileSessionStore',
@@ -99,25 +96,14 @@ describe.each([
       new EnvFileSessionStore(path.join(dir, 'D.env')),
     fixture: ABAP_2X,
     secret: ABAP_SECRET,
-    stored: {
-      authorizationToken: 'old-token',
-      sessionCookies: COOKIES,
-      refreshToken: 'old-refresh',
-      expiresAt: 1_800_000_000_000,
-    },
   },
   {
     name: 'XsuaaSessionStore',
     make: (dir: string): ISessionStore => new XsuaaSessionStore(dir),
     fixture: XSUAA_2X,
     secret: XSUAA_SECRET,
-    stored: {
-      authorizationToken: 'old-token',
-      refreshToken: 'old-refresh',
-      expiresAt: 1_800_000_000_000,
-    },
   },
-])('$name — a 2.x file with every key', ({ make, fixture, secret, stored }) => {
+])('$name — a 2.x file with every key', ({ make, fixture, secret }) => {
   let dir: string;
   let file: string;
   beforeEach(() => {
@@ -129,15 +115,28 @@ describe.each([
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('answers only the secret keys, and no binding', async () => {
+  it("is refused as a whole: not of the store's format", async () => {
     const store = make(dir);
-    expect(await store.loadSession('D')).toEqual(stored);
-    const { refreshToken: _r, ...connection } = stored;
-    expect(await store.getConnectionConfig('D')).toEqual(connection);
-    expect(await store.getAuthorizationConfig('D')).toBeNull();
+    for (const read of [
+      () => store.loadSession('D'),
+      () => store.getConnectionConfig('D'),
+    ]) {
+      const refused = await read().catch((e: unknown) => e);
+      expect(refused).toBeInstanceOf(StorageError);
+      expect((refused as StorageError).reason).toBe('record-format');
+    }
   });
 
-  it('a session write leaves every non-secret line byte for byte', async () => {
+  it('a partial write is refused, the file unchanged byte for byte', async () => {
+    const store = make(dir);
+    const refused = await store
+      .saveSession('D', { refreshToken: 'new-refresh' })
+      .catch((e: unknown) => e);
+    expect((refused as StorageError).reason).toBe('record-format');
+    expect(fs.readFileSync(file, 'utf8')).toBe(fixture);
+  });
+
+  it('a write of a new credential replaces the secret, every non-secret line byte for byte', async () => {
     const store = make(dir);
     await store.saveSession('D', {
       authorizationToken: 'new-token',
