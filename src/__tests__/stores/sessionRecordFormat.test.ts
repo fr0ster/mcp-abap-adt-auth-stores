@@ -244,6 +244,27 @@ describe.each(VARIANTS)('$name — the record format', (v) => {
         await refusedReads(v.make(dir));
       });
 
+      it('canonical base64 whose bytes are not UTF-8', async () => {
+        write([`${cookies}=/w==`, `${v.issuedFor}=`, `${v.issuedBy}=`]);
+        await refusedReads(v.make(dir));
+      });
+
+      it('a partial write onto cookies that are not UTF-8 is refused, the file unchanged', async () => {
+        const before = write([
+          ...means(),
+          `${cookies}=/w==`,
+          `${v.issuedFor}=`,
+          `${v.issuedBy}=`,
+        ]);
+        const store = v.make(dir);
+        expectRefused(
+          await store
+            .saveSession('D', { refreshToken: 'new-refresh' })
+            .catch((e: unknown) => e),
+        );
+        expect(fs.readFileSync(file, 'utf8')).toBe(before);
+      });
+
       it('cookies not in the writer’s base64', async () => {
         write([
           `${cookies}=SECRET-COOKIE-not*base64`,

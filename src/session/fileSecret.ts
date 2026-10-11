@@ -55,9 +55,16 @@ function isDigits(text: string): boolean {
   return true;
 }
 
-/** Whether `encoded` is exactly what the writer's base64 produces. */
+/**
+ * Whether `encoded` is exactly what the writer produces for some string: the
+ * writer encodes the cookies string as UTF-8, then base64. Decoding it as
+ * UTF-8 and encoding the string again must give the stored text back — so
+ * the base64 is canonical and its bytes are lossless UTF-8 (bytes that are
+ * not decode to U+FFFD and re-encode differently).
+ */
 function isWrittenBase64(encoded: string): boolean {
-  return Buffer.from(encoded, 'base64').toString('base64') === encoded;
+  const text = Buffer.from(encoded, 'base64').toString('utf8');
+  return Buffer.from(text, 'utf8').toString('base64') === encoded;
 }
 
 /**
