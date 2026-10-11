@@ -3,7 +3,8 @@
  *
  * A 2.x `<destination>.env` holds means and secret together. The session store
  * answers only the secret keys of such a file — and, from 3.1.0, the binding
- * its URL and client compose (`sessionBinding.test.ts`) — and a session write
+ * its URL and client compose (`sessionBinding.test.ts`; not
+ * `EnvFileSessionStore` from 4.1.0, `envFileUnbound.test.ts`) — and a session write
  * rewrites only the secret and binding keys: every other line — the URL, the
  * type, the client, the SNC settings, a comment, a key this package does not
  * know — is left byte for byte, so the destination store can still read the
@@ -101,13 +102,13 @@ describe.each([
       new EnvFileSessionStore(path.join(dir, 'D.env')),
     fixture: ABAP_2X,
     secret: ABAP_SECRET,
+    // 4.1.0: the file states no binding key, and its means are the
+    // destination's own, so it answers no binding (4.0.0 composed one).
     stored: {
       authorizationToken: 'old-token',
       sessionCookies: COOKIES,
       refreshToken: 'old-refresh',
       expiresAt: 1_800_000_000_000,
-      issuedFor: 'https://legacy.example?sap-client=100',
-      issuedBy: 'https://uaa.example?client_id=client',
     },
   },
   {
@@ -135,7 +136,7 @@ describe.each([
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('answers only the secret keys, and the binding they compose', async () => {
+  it('answers only the secret keys, and the binding the store composes', async () => {
     const store = make(dir);
     expect(await store.loadSession('D')).toEqual(stored);
     const { refreshToken: _r, ...connection } = stored;

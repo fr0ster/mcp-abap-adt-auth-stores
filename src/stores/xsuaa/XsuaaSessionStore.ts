@@ -35,6 +35,9 @@ const KEYS: SecretKeys = {
     sapClient: XSUAA_DESTINATION_VARS.sapClient,
     uaaUrl: XSUAA_DESTINATION_VARS.uaaUrl,
     uaaClientId: XSUAA_DESTINATION_VARS.uaaClientId,
+    // The session file is not the means' file: a legacy one is bound to
+    // the means its writers left beside the token.
+    withoutBindingKeys: 'compose',
   },
 };
 

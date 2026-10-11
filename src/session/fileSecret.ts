@@ -24,12 +24,24 @@ export interface SecretKeys {
   legacy: LegacyBindingKeys;
 }
 
-/** The means keys a legacy binding is composed from. */
+/** The means keys a legacy binding is composed from, and when it is. */
 export interface LegacyBindingKeys {
   serviceUrl: string;
   sapClient: string;
   uaaUrl: string;
   uaaClientId: string;
+  /**
+   * What a file stating **neither** binding key answers (4.1.0):
+   *
+   * - `'compose'` — the binding composed from the means keys beside the
+   *   credential (a session folder: the session file is not where the
+   *   destination's means are read from);
+   * - `'none'` — no binding (`EnvFileSessionStore`: its file's means keys are
+   *   the destination's own means, so a composed binding protects nothing).
+   *
+   * A file stating at least one binding key composes the other either way.
+   */
+  withoutBindingKeys: 'compose' | 'none';
 }
 
 /** `base` with one more query parameter, its value percent-encoded. */
@@ -48,7 +60,9 @@ function withQuery(base: string, name: string, value: string): string {
  *   cookie session has none.
  *
  * Each field is composed only when its own key is absent from the file: a key
- * present — empty included — is what a 3.1.0 writer stated.
+ * present — empty included — is what a 3.1.0 writer stated. A file with
+ * neither key composes nothing when the store says so
+ * (`withoutBindingKeys: 'none'`, 4.1.0).
  */
 function legacyBinding(
   vars: Record<string, string>,
@@ -57,6 +71,12 @@ function legacyBinding(
 ): Pick<SessionSecret, 'issuedFor' | 'issuedBy'> {
   const value = (key: string) => vars[key]?.trim() || undefined;
   const binding: Pick<SessionSecret, 'issuedFor' | 'issuedBy'> = {};
+  if (
+    keys.legacy.withoutBindingKeys === 'none' &&
+    !(keys.issuedFor in vars) &&
+    !(keys.issuedBy in vars)
+  )
+    return binding;
   if (!(keys.issuedFor in vars)) {
     const url = value(keys.legacy.serviceUrl);
     const client = value(keys.legacy.sapClient);

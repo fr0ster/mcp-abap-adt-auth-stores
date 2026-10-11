@@ -7,6 +7,10 @@
  * the file and written back to it. Every other line — the URL, the type, a
  * user and password, the client: means, read by `EnvDestinationStore` — is
  * left as it is.
+ *
+ * A file stating neither `SAP_ISSUED_FOR` nor `SAP_ISSUED_BY` answers no
+ * binding (4.1.0): its means are the destination's own, so the folder stores'
+ * legacy composition would protect nothing here.
  */
 
 import * as path from 'node:path';
@@ -34,6 +38,10 @@ const KEYS: SecretKeys = {
     sapClient: ABAP_DESTINATION_VARS.sapClient,
     uaaUrl: ABAP_DESTINATION_VARS.uaaUrl,
     uaaClientId: ABAP_DESTINATION_VARS.uaaClientId,
+    // The file's means keys are this destination's own means
+    // (`EnvDestinationStore.forFile`): composing a binding from them would
+    // protect nothing, so a file stating no binding key answers none.
+    withoutBindingKeys: 'none',
   },
 };
 
