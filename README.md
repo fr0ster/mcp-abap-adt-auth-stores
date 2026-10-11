@@ -11,7 +11,7 @@ This package provides file-based and in-memory stores for service keys and sessi
 npm install @mcp-abap-adt/auth-stores
 ```
 
-Requires Node.js 22, 24 or 26. 4.0.0 and 4.1.0 are built on `@mcp-abap-adt/interfaces-auth` 7, `@mcp-abap-adt/interfaces-auth-sap` 3 and `@mcp-abap-adt/interfaces-auth-broker` 1.3: use it with the auth chain on those contracts (`@mcp-abap-adt/auth-providers` 6 and the broker release built on them) — see the CHANGELOG's migration note.
+Requires Node.js 22, 24 or 26. From 4.0.0 it is built on `@mcp-abap-adt/interfaces-auth` 7, `@mcp-abap-adt/interfaces-auth-sap` 3 and `@mcp-abap-adt/interfaces-auth-broker` 1.3: use it with the auth chain on those contracts (`@mcp-abap-adt/auth-providers` 6 and the broker release built on them) — see the CHANGELOG's migration note.
 
 ## Overview
 
@@ -159,22 +159,11 @@ They follow the credential, extending the rules above:
 
 **A custom `ISessionStore`** (a database, a message log, a secret store) must persist both fields beside the secret. One that drops them still type-checks, but the broker then never uses its sessions — every process start logs in afresh, a browser each time for an interactive grant.
 
-#### Files written before 3.1.0
+#### Only what was written
 
-A file written by auth-stores 2.x or 3.0.0 (or auth-broker 3.x) has no binding key. While it holds a credential, a session-folder store (`AbapSessionStore`, `XsuaaSessionStore`) answers the binding its writers left beside the token — the 3.x broker wrote the URL with the token, and the 3.x CLI and broker the client — **composed, not canonicalised**:
+**A store only stores (5.0.0).** It answers `issuedFor` / `issuedBy` exactly as the file holds them — a non-empty key is answered, an absent or empty key is not — and composes, guesses or validates nothing: the URL, the client and the UAA keys beside a credential are means, never read as its binding. A write leaves the binding exactly as the writer passed it; a write that passes none adds none.
 
-| Field | Composed from (`AbapSessionStore`) | `XsuaaSessionStore` | When |
-|---|---|---|---|
-| `issuedFor` | `SAP_URL`, with `sap-client=<SAP_CLIENT>` when `SAP_CLIENT` is stated | `XSUAA_MCP_URL` (+ `XSUAA_CLIENT`) | the file holds a token or cookies and the URL key |
-| `issuedBy` | `SAP_UAA_URL` with `client_id=<SAP_UAA_CLIENT_ID>` | `XSUAA_UAA_URL` + `XSUAA_UAA_CLIENT_ID` | the file holds a **token** and both keys; a cookie session never had an ACS stored, so it has none |
-
-The parameter is appended with `?`, or `&` when the URL already has a query; its value is percent-encoded. Case, port, path and trailing `/` stay as written. These are exactly the destination store's means keys (`ABAP_DESTINATION_VARS` / `XSUAA_DESTINATION_VARS`). A file without them answers no binding, and the broker logs in once afresh.
-
-**`EnvFileSessionStore` composes none for a file stating neither key (4.1.0).** Its file holds the destination's own means — `EnvDestinationStore.forFile` reads the same `SAP_URL`, `SAP_CLIENT`, `SAP_UAA_URL` and `SAP_UAA_CLIENT_ID` from it — so a binding composed from them always equals what the means give and protected nothing; it also made a legacy `jwt/none` file (a token handed over, no UAA client) read as half a binding (`issuedFor` alone), which the broker refuses, and a file with the legacy UAA pair read as a binding the broker never recorded. Such a file now answers no `issuedFor` and no `issuedBy`, and the broker (`@mcp-abap-adt/auth-broker` 5.1.0) binds an unbound handed-over credential (`jwt/none`, `saml/none`) to its destination and writes both keys. A file stating at least one of `SAP_ISSUED_FOR` / `SAP_ISSUED_BY` reads as in the folder stores: the other one is composed from the table above. The folder stores keep composing because there the session file is not where the means are read from.
-
-Each binding key stands alone: present — **empty included** — it is what a 3.1.0 writer stated, and its legacy source is no longer read. Since a file store writes both keys with every credential, the **first credential written by 3.1.0 ends the legacy reading** of that file; a write that keeps the credential (a new refresh token, an expiry) writes the binding it answered at that moment, which then no longer follows the means keys.
-
-**A shared file** — `EnvDestinationStore` and a session store on one `<destination>.env` — holds `SAP_URL` / `SAP_UAA_*` as **means**. A session written by 3.1.0 carries its own binding keys, so later changes of those means do not move it (whichever store wrote first). A session written before 3.1.0 is read as above: its binding is composed from the **current** means keys. **Remaining risk:** if those keys were edited (by hand, or by `setDestination`) before the first 3.1.0 write — or a 3.0.0 store rewrote the token after the means had moved — the session answers a binding nobody checked, and the broker may present that secret to the edited URL. The first 3.1.0 write of the session ends it.
+A session file written without binding keys — by auth-stores 2.x or 3.0.0, auth-broker 3.x, or by hand — therefore answers no binding, and auth-broker refuses its credential or logs in again. Regenerate such a session with `mcp-auth`, which always writes `SAP_ISSUED_FOR` / `SAP_ISSUED_BY` (or `XSUAA_ISSUED_*`): `mcp-auth --service-key <key.json> --output <file>`, or `mcp-auth --destination <name>`. 3.1.0–4.x stores composed a binding for such a file from its means keys; 5.0.0 no longer does (see the CHANGELOG's migration note).
 
 ## Usage
 
@@ -357,7 +346,7 @@ A file written by auth-stores 2.x (or auth-broker 3.x) holds means and secret to
 | `SAP_JWT_TOKEN`, `SAP_SESSION_COOKIES_B64`, `SAP_REFRESH_TOKEN` (and the new `SAP_EXPIRES_AT`, and 3.1.0's `SAP_ISSUED_FOR` / `SAP_ISSUED_BY`) | secret | the session store |
 | `SAP_URL`, `SAP_AUTH_TYPE`, `SAP_USERNAME`, `SAP_PASSWORD`, `SAP_SNC_*`, `SAP_UAA_URL`, `SAP_UAA_CLIENT_ID`, `SAP_UAA_CLIENT_SECRET`, `SAP_CLIENT`, `SAP_LANGUAGE` | means | `EnvDestinationStore`, pointed at the same directory |
 
-A session write rewrites only the secret keys, so a 2.x file stays a complete 2.x file. From 3.1.0 the session-folder store also answers the binding the URL and client keys compose (see *Files written before 3.1.0*; `EnvFileSessionStore` composes none from 4.1.0). A 2.x `basic` or `snc` file is a complete destination as it is. A 2.x `jwt` or `saml` file states no grant — 2.x never wrote one — so add `SAP_GRANT_TYPE` (by hand, or through `setDestination`). A 3.x public-client file (`mcp-sso` stripped its `__public__` secret line) has no `SAP_UAA_CLIENT_SECRET`; from 3.2.0 its client is answered with the secret `''`, a public client, as it is. A file without `SAP_AUTH_TYPE` read with a service key fallback takes the key's `jwt` — see *Infers nothing* above.
+A session write rewrites only the secret keys, so a 2.x file stays a complete 2.x file. Such a file states no binding key, so it answers no binding (see *Only what was written*): regenerate the session with `mcp-auth`. A 2.x `basic` or `snc` file is a complete destination as it is. A 2.x `jwt` or `saml` file states no grant — 2.x never wrote one — so add `SAP_GRANT_TYPE` (by hand, or through `setDestination`). A 3.x public-client file (`mcp-sso` stripped its `__public__` secret line) has no `SAP_UAA_CLIENT_SECRET`; from 3.2.0 its client is answered with the secret `''`, a public client, as it is. A file without `SAP_AUTH_TYPE` read with a service key fallback takes the key's `jwt` — see *Infers nothing* above.
 
 ### BTP / XSUAA stores
 
@@ -396,8 +385,6 @@ const keyStore = EnvDestinationStore.forFile(envPath, { log: logger });
 const means = await keyStore.getConnectionConfig('default');
 const secret = await sessionStore.loadSession('default'); // the file's secret keys
 ```
-
-**Pair it with the means of the same file.** A file stating neither `SAP_ISSUED_FOR` nor `SAP_ISSUED_BY` answers no binding (4.1.0; see *Files written before 3.1.0*), because the file's means are the destination's own. A consumer that pairs `EnvFileSessionStore` with means from another source — another directory, a service key, a database — loses the protection the file's own `SAP_URL` gave such a file: its credential is no longer tied to that URL, and the broker may present it to the other source's resource. Avoiding that pairing is the consumer's; the store does not detect it. Use `EnvDestinationStore.forFile` over the same path, or a session-folder store.
 
 Besides the contract it offers `getToken`, `setToken`, `getRefreshToken`, `setRefreshToken`. 2.x's `getAuthType()` (the type is means), `save()` and `clear()` (the in-memory layer is gone: writes reach the file at once) were removed.
 

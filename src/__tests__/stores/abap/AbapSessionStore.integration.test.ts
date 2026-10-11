@@ -48,7 +48,7 @@ describe('AbapSessionStore Integration', () => {
           'sessionCookies',
           'expiresAt',
           'refreshToken',
-          // what the credential is bound to (3.1.0), legacy-composed included
+          // what the credential is bound to (3.1.0), as the file states it
           'issuedFor',
           'issuedBy',
         ]).toContain(key);

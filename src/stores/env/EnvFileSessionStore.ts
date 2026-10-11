@@ -8,9 +8,8 @@
  * user and password, the client: means, read by `EnvDestinationStore` — is
  * left as it is.
  *
- * A file stating neither `SAP_ISSUED_FOR` nor `SAP_ISSUED_BY` answers no
- * binding (4.1.0): its means are the destination's own, so the folder stores'
- * legacy composition would protect nothing here.
+ * The binding is answered exactly as `SAP_ISSUED_FOR` / `SAP_ISSUED_BY` hold
+ * it; a file without them answers none (5.0.0).
  */
 
 import * as path from 'node:path';
@@ -24,7 +23,6 @@ import { SecretSessionStore } from '../../session/SecretSessionStore';
 import type { SessionSecret } from '../../session/sessionSecret';
 import { withFileLock } from '../../storage/fileLock';
 import { ABAP_SESSION_VARS } from '../../utils/constants';
-import { ABAP_DESTINATION_VARS } from '../destination/EnvDestinationStore';
 
 const KEYS: SecretKeys = {
   authorizationToken: ABAP_SESSION_VARS.AUTHORIZATION_TOKEN,
@@ -33,16 +31,6 @@ const KEYS: SecretKeys = {
   refreshToken: ABAP_SESSION_VARS.REFRESH_TOKEN,
   issuedFor: ABAP_SESSION_VARS.ISSUED_FOR,
   issuedBy: ABAP_SESSION_VARS.ISSUED_BY,
-  legacy: {
-    serviceUrl: ABAP_DESTINATION_VARS.serviceUrl,
-    sapClient: ABAP_DESTINATION_VARS.sapClient,
-    uaaUrl: ABAP_DESTINATION_VARS.uaaUrl,
-    uaaClientId: ABAP_DESTINATION_VARS.uaaClientId,
-    // The file's means keys are this destination's own means
-    // (`EnvDestinationStore.forFile`): composing a binding from them would
-    // protect nothing, so a file stating no binding key answers none.
-    withoutBindingKeys: 'none',
-  },
 };
 
 export class EnvFileSessionStore extends SecretSessionStore {

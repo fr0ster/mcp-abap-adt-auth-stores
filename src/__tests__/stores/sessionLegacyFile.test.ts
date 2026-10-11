@@ -2,13 +2,12 @@
  * 2.x session files keep being read, and stay 2.x files (3.0.0).
  *
  * A 2.x `<destination>.env` holds means and secret together. The session store
- * answers only the secret keys of such a file — and, from 3.1.0, the binding
- * its URL and client compose (`sessionBinding.test.ts`; not
- * `EnvFileSessionStore` from 4.1.0, `envFileUnbound.test.ts`) — and a session write
- * rewrites only the secret and binding keys: every other line — the URL, the
- * type, the client, the SNC settings, a comment, a key this package does not
- * know — is left byte for byte, so the destination store can still read the
- * means from the same file.
+ * answers only the secret keys of such a file — no binding, since it states
+ * none and a store composes nothing (5.0.0; `sessionBinding.test.ts`) — and a
+ * session write rewrites only the secret and binding keys: every other line —
+ * the URL, the type, the client, the SNC settings, a comment, a key this
+ * package does not know — is left byte for byte, so the destination store can
+ * still read the means from the same file.
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -92,8 +91,6 @@ describe.each([
       sessionCookies: COOKIES,
       refreshToken: 'old-refresh',
       expiresAt: 1_800_000_000_000,
-      issuedFor: 'https://legacy.example?sap-client=100',
-      issuedBy: 'https://uaa.example?client_id=client',
     },
   },
   {
@@ -102,8 +99,6 @@ describe.each([
       new EnvFileSessionStore(path.join(dir, 'D.env')),
     fixture: ABAP_2X,
     secret: ABAP_SECRET,
-    // 4.1.0: the file states no binding key, and its means are the
-    // destination's own, so it answers no binding (4.0.0 composed one).
     stored: {
       authorizationToken: 'old-token',
       sessionCookies: COOKIES,
@@ -120,8 +115,6 @@ describe.each([
       authorizationToken: 'old-token',
       refreshToken: 'old-refresh',
       expiresAt: 1_800_000_000_000,
-      issuedFor: 'https://mcp.example',
-      issuedBy: 'https://uaa.example?client_id=client',
     },
   },
 ])('$name — a 2.x file with every key', ({ make, fixture, secret, stored }) => {
@@ -136,7 +129,7 @@ describe.each([
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('answers only the secret keys, and the binding the store composes', async () => {
+  it('answers only the secret keys, and no binding', async () => {
     const store = make(dir);
     expect(await store.loadSession('D')).toEqual(stored);
     const { refreshToken: _r, ...connection } = stored;

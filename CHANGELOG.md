@@ -5,52 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.1.0] - 2026-10-11
+## [5.0.0] - 2026-10-11
 
-`EnvFileSessionStore` composes no legacy binding for a file that states none.
-`AbapSessionStore` and `XsuaaSessionStore` are unchanged.
+A store answers only the binding it holds: no store composes a binding for a
+session file that states none.
+
+### Migration
+
+- **Who is affected:** a session file with a credential and no binding keys —
+  written by auth-stores 2.x or 3.0.0, by auth-broker 3.x, or by hand. 3.1.0–4.0.0
+  answered a binding composed from the means keys beside the credential;
+  5.0.0 answers none, so auth-broker refuses that credential or logs in again.
+- **What to do:** regenerate the session with `mcp-auth`, which always writes
+  `SAP_ISSUED_FOR` / `SAP_ISSUED_BY` (or `XSUAA_ISSUED_FOR` /
+  `XSUAA_ISSUED_BY`): `mcp-auth --service-key <key.json> --output <file>`, or
+  `mcp-auth --destination <name>`.
+- **Consumers of the store API:** nothing changes in the signatures; only what
+  a store answers for such a file.
 
 ### Changed
 
-- **`EnvFileSessionStore`: a file with neither `SAP_ISSUED_FOR` nor
-  `SAP_ISSUED_BY` answers no `issuedFor` and no `issuedBy`.** 3.1.0–4.0.0
-  composed them, as for a file written before 3.1.0, from `SAP_URL` (+
-  `SAP_CLIENT`) and `SAP_UAA_URL` + `SAP_UAA_CLIENT_ID`. A file with at least
-  one of the two keys — empty included — reads exactly as in 4.0.0: the key
-  present is answered as written, and the absent one is composed as before.
-  Why:
-  - the file is the destination's own: `EnvDestinationStore.forFile` reads
-    the same `SAP_URL`, `SAP_CLIENT`, `SAP_UAA_URL` and `SAP_UAA_CLIENT_ID`
-    from it as means, so a binding composed from them always equals what the
-    means give — it protected nothing;
-  - it made a legacy `jwt/none` file (a token handed over, no UAA client) read
-    as half a binding (`issuedFor` alone), which auth-broker refuses; and a
-    file with the legacy UAA pair read as a binding of its own, not the one
-    the broker records.
-
-  With no binding answered, auth-broker 5.1.0 binds an unbound handed-over
-  credential (`jwt/none`, `saml/none`) to its destination and writes both
-  keys. The session-folder stores keep composing: there the session file is
-  separate from the means, so the composed binding is what still ties a
-  legacy secret to the means it was used with.
-- **A consumer pairing `EnvFileSessionStore` with means from another
-  source** — not `EnvDestinationStore.forFile` over the same file — loses the
-  protection the file's own `SAP_URL` gave a file stating no binding key: its
-  credential is no longer tied to that URL. Such a pairing is the consumer's
-  to avoid (README, *EnvFileSessionStore*); the store does not detect it.
-- `SecretKeys.legacy` (internal) carries `withoutBindingKeys: 'compose' |
-  'none'`: each file store states what a file with neither binding key
-  answers; no store's class is checked.
-
-### Notes (auth-broker, measured)
-
-- auth-broker 5.0.1: outcomes unchanged; a legacy `none` file is refused
-  naming both binding fields instead of `issuedBy`.
-- Refreshable token rows unchanged: the composed `issuedBy` never matched the
-  broker's binding record, so the stored token was already discarded and a
-  login followed.
-- The CLI is unaffected: it reads and writes through the folder stores and
-  always writes both keys.
+- **Breaking: no legacy binding composition.** `AbapSessionStore`,
+  `XsuaaSessionStore` and `EnvFileSessionStore` answer `issuedFor` /
+  `issuedBy` exactly as the file holds them — a non-empty key is answered, an
+  absent or empty key is not. Nothing is composed from `SAP_URL` (+
+  `SAP_CLIENT`), `SAP_UAA_URL` + `SAP_UAA_CLIENT_ID`, or their `XSUAA_*`
+  counterparts, whether one binding key is present or none. Why: a store only
+  stores and returns secrets; it never composes, guesses or validates a
+  binding. Session files come from `mcp-auth`, which always writes the binding,
+  and a credential without a valid binding is auth-broker's to refuse.
+- A write leaves the binding exactly as the writer passed it; a write that
+  passes none adds no binding (both keys are written empty beside a
+  credential, as since 3.1.0, and an empty key reads as none).
+- Internal: `SecretKeys.legacy` and the composition in `fileSecret.ts` are
+  removed.
 
 ## [4.0.0] - 2026-10-08
 

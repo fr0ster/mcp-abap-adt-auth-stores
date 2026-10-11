@@ -24,7 +24,6 @@ import { AbapSessionStore } from '../../stores/abap/AbapSessionStore';
 import { SafeAbapSessionStore } from '../../stores/abap/SafeAbapSessionStore';
 import {
   ABAP_DESTINATION_VARS,
-  type DestinationVariables,
   EnvDestinationStore,
   XSUAA_DESTINATION_VARS,
 } from '../../stores/destination/EnvDestinationStore';
@@ -515,21 +514,21 @@ describe('the key stores never answer a binding', () => {
   });
 });
 
-interface LegacyVariant {
+interface FileVariant {
   name: string;
   make: (dir: string) => ISessionStore;
-  /** The destination keys a legacy file holds the URL and client under. */
+  /** The means keys a file written before 3.1.0 holds beside the token. */
   url: string;
   client: string;
   uaaUrl: string;
   uaaClientId: string;
   token: string;
+  cookies?: string;
   issuedForKey: string;
   issuedByKey: string;
-  variables: DestinationVariables;
 }
 
-const LEGACY: LegacyVariant[] = [
+const FILE_STORES: FileVariant[] = [
   {
     name: 'AbapSessionStore',
     make: (dir) => new AbapSessionStore(dir),
@@ -538,9 +537,9 @@ const LEGACY: LegacyVariant[] = [
     uaaUrl: 'SAP_UAA_URL',
     uaaClientId: 'SAP_UAA_CLIENT_ID',
     token: 'SAP_JWT_TOKEN',
+    cookies: 'SAP_SESSION_COOKIES_B64',
     issuedForKey: 'SAP_ISSUED_FOR',
     issuedByKey: 'SAP_ISSUED_BY',
-    variables: ABAP_DESTINATION_VARS,
   },
   {
     name: 'EnvFileSessionStore',
@@ -550,9 +549,9 @@ const LEGACY: LegacyVariant[] = [
     uaaUrl: 'SAP_UAA_URL',
     uaaClientId: 'SAP_UAA_CLIENT_ID',
     token: 'SAP_JWT_TOKEN',
+    cookies: 'SAP_SESSION_COOKIES_B64',
     issuedForKey: 'SAP_ISSUED_FOR',
     issuedByKey: 'SAP_ISSUED_BY',
-    variables: ABAP_DESTINATION_VARS,
   },
   {
     name: 'XsuaaSessionStore',
@@ -564,192 +563,108 @@ const LEGACY: LegacyVariant[] = [
     token: 'XSUAA_JWT_TOKEN',
     issuedForKey: 'XSUAA_ISSUED_FOR',
     issuedByKey: 'XSUAA_ISSUED_BY',
-    variables: XSUAA_DESTINATION_VARS,
   },
 ];
 
-// The session-folder stores compose a binding for a file that states no
-// binding key. `EnvFileSessionStore` does not from 4.1.0 — its file's means
-// are the destination's own (`envFileUnbound.test.ts`) — so these cases,
-// which pinned its 4.0.0 composition, run for the folder stores only.
-const FOLDER_LEGACY = LEGACY.filter((v) => v.name !== 'EnvFileSessionStore');
-
-describe.each(FOLDER_LEGACY)(
-  '$name — a legacy file (no binding keys) composes its binding',
-  (v) => {
-    let dir: string;
-    let file: string;
-    const write = (lines: string[]) =>
-      fs.writeFileSync(file, [...lines, ''].join('\n'));
-    beforeEach(() => {
-      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'session-legacy-'));
-      file = path.join(dir, 'D.env');
-    });
-    afterEach(() => {
-      fs.rmSync(dir, { recursive: true, force: true });
-    });
-
-    it('answers issuedFor from the URL with the client, issuedBy from the UAA URL with the client id', async () => {
-      write([
-        `${v.url}=https://legacy.example/sap/bc/adt`,
-        `${v.client}=100`,
-        `${v.uaaUrl}=https://uaa.example`,
-        `${v.uaaClientId}=client`,
-        `${v.token}=old-token`,
-      ]);
-      const session = await v.make(dir).loadSession('D');
-      expect(session?.issuedFor).toBe(
-        'https://legacy.example/sap/bc/adt?sap-client=100',
-      );
-      expect(session?.issuedBy).toBe('https://uaa.example?client_id=client');
-    });
-
-    it('answers the URL alone as issuedFor when no client is stated', async () => {
-      write([
-        `${v.url}=https://legacy.example`,
-        `${v.uaaUrl}=https://uaa.example`,
-        `${v.uaaClientId}=client`,
-        `${v.token}=old-token`,
-      ]);
-      const session = await v.make(dir).loadSession('D');
-      expect(session?.issuedFor).toBe('https://legacy.example');
-    });
-
-    it('composes, never canonicalises: case, port and trailing / stay as written', async () => {
-      write([
-        `${v.url}=HTTPS://Legacy.Example:443/sap/`,
-        `${v.client}=100`,
-        `${v.uaaUrl}=https://UAA.example/`,
-        `${v.uaaClientId}=client`,
-        `${v.token}=old-token`,
-      ]);
-      const session = await v.make(dir).loadSession('D');
-      expect(session?.issuedFor).toBe(
-        'HTTPS://Legacy.Example:443/sap/?sap-client=100',
-      );
-      expect(session?.issuedBy).toBe('https://UAA.example/?client_id=client');
-    });
-
-    it('appends to a query the URL already has, and encodes the values', async () => {
-      write([
-        `${v.url}=https://legacy.example/p?x=1`,
-        `${v.client}=100`,
-        `${v.uaaUrl}=https://uaa.example`,
-        `${v.uaaClientId}=sb-a+b|c!t1`,
-        `${v.token}=old-token`,
-      ]);
-      const session = await v.make(dir).loadSession('D');
-      expect(session?.issuedFor).toBe(
-        'https://legacy.example/p?x=1&sap-client=100',
-      );
-      expect(session?.issuedBy).toBe(
-        'https://uaa.example?client_id=sb-a%2Bb%7Cc!t1',
-      );
-    });
-
-    it('answers no issuedBy without the client id, and none without the UAA URL', async () => {
-      write([
-        `${v.url}=https://legacy.example`,
-        `${v.uaaUrl}=https://uaa.example`,
-        `${v.token}=old-token`,
-      ]);
-      expect(await v.make(dir).loadSession('D')).toEqual({
-        authorizationToken: 'old-token',
-        issuedFor: 'https://legacy.example',
-      });
-      write([
-        `${v.url}=https://legacy.example`,
-        `${v.uaaClientId}=client`,
-        `${v.token}=old-token`,
-      ]);
-      expect(await v.make(dir).loadSession('D')).toEqual({
-        authorizationToken: 'old-token',
-        issuedFor: 'https://legacy.example',
-      });
-    });
-
-    it('answers no issuedFor without the URL, even with a client', async () => {
-      write([`${v.client}=100`, `${v.token}=old-token`]);
-      expect(await v.make(dir).loadSession('D')).toEqual({
-        authorizationToken: 'old-token',
-      });
-    });
-
-    it('a write with no new credential writes what was answered, so a later edit of the URL does not move it', async () => {
-      write([
-        `${v.url}=https://legacy.example`,
-        `${v.client}=100`,
-        `${v.uaaUrl}=https://uaa.example`,
-        `${v.uaaClientId}=client`,
-        `${v.token}=old-token`,
-      ]);
-      const store = v.make(dir);
-      await store.saveSession('D', { refreshToken: 'new-refresh' });
-      const destinations = new EnvDestinationStore(dir, {
-        variables: v.variables,
-      });
-      await destinations.setDestination('D', {
-        serviceUrl: 'https://edited.example',
-        uaaClientId: 'edited',
-      });
-      expect(await store.loadSession('D')).toEqual({
-        authorizationToken: 'old-token',
-        refreshToken: 'new-refresh',
-        issuedFor: 'https://legacy.example?sap-client=100',
-        issuedBy: 'https://uaa.example?client_id=client',
-      });
-    });
-  },
-);
-
-describe.each(LEGACY)('$name — a legacy file, every file store', (v) => {
+// A store only stores (5.0.0): it answers the binding keys exactly as written
+// and composes nothing from the other keys of the file — the URL, the client,
+// the UAA pair a file written before 3.1.0 holds beside its credential. Such a
+// file answers no binding; refusing its credential is the broker's.
+describe.each(FILE_STORES)('$name — only the binding written', (v) => {
   let dir: string;
   let file: string;
   const write = (lines: string[]) =>
     fs.writeFileSync(file, [...lines, ''].join('\n'));
+  const MEANS = () => [
+    `${v.url}=https://means.example/sap/bc/adt`,
+    `${v.client}=100`,
+  ];
+  const UAA_PAIR = () => [
+    `${v.uaaUrl}=https://uaa.example`,
+    `${v.uaaClientId}=client`,
+  ];
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'session-legacy-'));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'session-unbound-'));
     file = path.join(dir, 'D.env');
   });
   afterEach(() => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('answers no binding without a credential', async () => {
-    write([
-      `${v.url}=https://legacy.example`,
-      `${v.client}=100`,
-      `${v.uaaUrl}=https://uaa.example`,
-      `${v.uaaClientId}=client`,
-      `${v.token.replace('JWT_TOKEN', 'REFRESH_TOKEN')}=old-refresh`,
-    ]);
-    expect(await v.make(dir).loadSession('D')).toEqual({
-      refreshToken: 'old-refresh',
+  it('a token beside the URL and client answers no binding', async () => {
+    write([...MEANS(), `${v.token}=old-token`]);
+    const store = v.make(dir);
+    expect(await store.loadSession('D')).toEqual({
+      authorizationToken: 'old-token',
     });
-    write([`${v.url}=https://legacy.example`, `${v.client}=100`]);
-    expect(await v.make(dir).loadSession('D')).toBeNull();
+    expect(await store.getConnectionConfig('D')).toEqual({
+      authorizationToken: 'old-token',
+    });
   });
 
-  it('a file with the binding keys answers them and ignores the legacy keys', async () => {
+  it('the UAA pair beside them adds no binding either', async () => {
+    write([...MEANS(), ...UAA_PAIR(), `${v.token}=old-token`]);
+    expect(await v.make(dir).loadSession('D')).toEqual({
+      authorizationToken: 'old-token',
+    });
+  });
+
+  if (v.cookies) {
+    const cookies = v.cookies;
+    it('a cookie session beside the URL and client answers no binding', async () => {
+      write([
+        ...MEANS(),
+        ...UAA_PAIR(),
+        `${cookies}=${Buffer.from(COOKIES).toString('base64')}`,
+      ]);
+      expect(await v.make(dir).loadSession('D')).toEqual({
+        sessionCookies: COOKIES,
+      });
+    });
+  }
+
+  it('one key written: that one is answered, the other is not composed', async () => {
     write([
-      `${v.url}=https://legacy.example`,
-      `${v.client}=100`,
-      `${v.uaaUrl}=https://uaa.example`,
-      `${v.uaaClientId}=client`,
+      ...MEANS(),
+      ...UAA_PAIR(),
+      `${v.token}=old-token`,
+      `${v.issuedForKey}=${FOR}`,
+    ]);
+    expect(await v.make(dir).loadSession('D')).toEqual({
+      authorizationToken: 'old-token',
+      issuedFor: FOR,
+    });
+    write([
+      ...MEANS(),
+      ...UAA_PAIR(),
+      `${v.token}=old-token`,
+      `${v.issuedByKey}=${BY}`,
+    ]);
+    expect(await v.make(dir).loadSession('D')).toEqual({
+      authorizationToken: 'old-token',
+      issuedBy: BY,
+    });
+  });
+
+  it('both keys written: answered as written, the means beside them unread', async () => {
+    write([
+      ...MEANS(),
+      ...UAA_PAIR(),
       `${v.token}=old-token`,
       `${v.issuedForKey}=${FOR}`,
       `${v.issuedByKey}=${BY}`,
     ]);
-    const session = await v.make(dir).loadSession('D');
-    expect(session?.issuedFor).toBe(FOR);
-    expect(session?.issuedBy).toBe(BY);
+    expect(await v.make(dir).loadSession('D')).toEqual({
+      authorizationToken: 'old-token',
+      issuedFor: FOR,
+      issuedBy: BY,
+    });
   });
 
-  it('an empty binding key answers none, and the legacy keys are not read', async () => {
+  it('empty keys answer none, and nothing is composed in their place', async () => {
     write([
-      `${v.url}=https://legacy.example`,
-      `${v.uaaUrl}=https://uaa.example`,
-      `${v.uaaClientId}=client`,
+      ...MEANS(),
+      ...UAA_PAIR(),
       `${v.token}=old-token`,
       `${v.issuedForKey}=`,
       `${v.issuedByKey}=`,
@@ -759,85 +674,54 @@ describe.each(LEGACY)('$name — a legacy file, every file store', (v) => {
     });
   });
 
-  it('each binding key stands alone: one written, the other still legacy', async () => {
+  it('answers no binding without a credential', async () => {
     write([
-      `${v.url}=https://legacy.example`,
-      `${v.uaaUrl}=https://uaa.example`,
-      `${v.uaaClientId}=client`,
-      `${v.token}=old-token`,
+      ...MEANS(),
+      ...UAA_PAIR(),
+      `${v.token.replace('JWT_TOKEN', 'REFRESH_TOKEN')}=old-refresh`,
       `${v.issuedForKey}=${FOR}`,
     ]);
-    const session = await v.make(dir).loadSession('D');
-    expect(session?.issuedFor).toBe(FOR);
-    expect(session?.issuedBy).toBe('https://uaa.example?client_id=client');
+    expect(await v.make(dir).loadSession('D')).toEqual({
+      refreshToken: 'old-refresh',
+    });
   });
 
-  it('a new token writes the binding keys: from then on the legacy keys are not read', async () => {
-    write([
-      `${v.url}=https://legacy.example`,
-      `${v.uaaUrl}=https://uaa.example`,
-      `${v.uaaClientId}=client`,
-      `${v.token}=old-token`,
-    ]);
+  it('a write with no binding on a file with none adds no fabricated binding', async () => {
+    write([...MEANS(), ...UAA_PAIR(), `${v.token}=old-token`]);
     const store = v.make(dir);
+    await store.saveSession('D', { refreshToken: 'new-refresh' });
+    expect(await store.loadSession('D')).toEqual({
+      authorizationToken: 'old-token',
+      refreshToken: 'new-refresh',
+    });
     await store.saveSession('D', { authorizationToken: 'new-token' });
     expect(await store.loadSession('D')).toEqual({
       authorizationToken: 'new-token',
+      refreshToken: 'new-refresh',
     });
+    const vars = readVars(file);
+    expect(vars[v.issuedForKey]).toBe('');
+    expect(vars[v.issuedByKey]).toBe('');
+    expect(vars[v.url]).toBe('https://means.example/sap/bc/adt');
+  });
+
+  it('a write with a binding writes it exactly as passed', async () => {
+    write([...MEANS(), ...UAA_PAIR(), `${v.token}=old-token`]);
+    const store = v.make(dir);
     await store.saveSession('D', {
-      authorizationToken: 'newer-token',
+      authorizationToken: 'new-token',
       issuedFor: FOR,
       issuedBy: BY,
     });
     const vars = readVars(file);
-    expect(vars[v.url]).toBe('https://legacy.example');
     expect(vars[v.issuedForKey]).toBe(FOR);
     expect(vars[v.issuedByKey]).toBe(BY);
+    expect(await store.loadSession('D')).toEqual({
+      authorizationToken: 'new-token',
+      issuedFor: FOR,
+      issuedBy: BY,
+    });
   });
-});
-
-it('a legacy XSUAA file reads XSUAA_MCP_URL, never the 1.x SAP_URL beside it', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'session-legacy-x-'));
-  try {
-    fs.writeFileSync(
-      path.join(dir, 'D.env'),
-      [
-        'SAP_URL=https://sap-1x.example',
-        'SAP_CLIENT=100',
-        'SAP_UAA_URL=https://sap-uaa.example',
-        'SAP_UAA_CLIENT_ID=sap-client',
-        'XSUAA_JWT_TOKEN=tok',
-        '',
-      ].join('\n'),
-    );
-    expect(await new XsuaaSessionStore(dir).loadSession('D')).toEqual({
-      authorizationToken: 'tok',
-    });
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-it('a legacy cookie session answers issuedFor and no issuedBy (no ACS was ever stored)', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'session-legacy-c-'));
-  try {
-    fs.writeFileSync(
-      path.join(dir, 'D.env'),
-      [
-        'SAP_URL=https://legacy.example',
-        'SAP_UAA_URL=https://uaa.example',
-        'SAP_UAA_CLIENT_ID=client',
-        `SAP_SESSION_COOKIES_B64=${Buffer.from(COOKIES).toString('base64')}`,
-        '',
-      ].join('\n'),
-    );
-    expect(await new AbapSessionStore(dir).loadSession('D')).toEqual({
-      sessionCookies: COOKIES,
-      issuedFor: 'https://legacy.example',
-    });
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
 });
 
 describe.each([
