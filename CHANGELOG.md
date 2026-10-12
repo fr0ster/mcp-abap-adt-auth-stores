@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.1] - 2026-10-12
+
+### Changed
+- Dependency `@mcp-abap-adt/interfaces-utils` `^1.1.1` (was `^1.1.0`), the current release
+  of the contract. Its API is the same. The lockfile is refreshed from the registry.
+
 ## [5.0.0] - 2026-10-11
 
 A file session store validates the record it holds against its own format, and
