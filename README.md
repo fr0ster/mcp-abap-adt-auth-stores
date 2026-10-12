@@ -74,7 +74,7 @@ This package interacts with external packages **ONLY through interfaces**:
 - **`@mcp-abap-adt/interfaces-auth-broker`** (`^1.3.0`): `IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `DestinationGrant` — the broker's port: the destination and the stores that hold it. 1.0.0 carries `grantType`, `expiresAt` and the `oidc*` / `saml*` fields; 1.1.0 adds `issuedFor` / `issuedBy`; 1.2.0 adds `getClientCertificate`
 - **`@mcp-abap-adt/interfaces-auth-sap`** (`^3.3.0`): `IAuthorizationConfig` — the UAA client
 - **`@mcp-abap-adt/interfaces-auth`** (`^7.5.0`): `STORE_ERROR_CODES` and `StoreErrorCode` — the failure vocabulary, which means the same off SAP
-- **`@mcp-abap-adt/interfaces-utils`** (`^1.1.0`): `ILogger`
+- **`@mcp-abap-adt/interfaces-utils`** (`^1.1.1`): `ILogger`
 - **`dotenv`** (`^18.0.4`): parses `.env` files
 - **Not `@mcp-abap-adt/interfaces`**: that facade is **deleted** as of its 52.0.0. npm still serves 51.0.0 to anyone pinned to it, with every symbol re-exported and deprecated, and nothing further ships there — a consumer takes the package that declares the name
 - **No direct dependencies on other implementation packages**: all interactions happen through those contracts
@@ -725,7 +725,7 @@ Integration tests return at once, with a warning, if `test-config.yaml` is not c
 - `@mcp-abap-adt/interfaces-auth-broker` (^1.3.0) - the store contracts (`IServiceKeyStore`, `ISessionStore`, `IConfig`, `IConnectionConfig`, `DestinationGrant`)
 - `@mcp-abap-adt/interfaces-auth-sap` (^3.3.0) - `IAuthorizationConfig`
 - `@mcp-abap-adt/interfaces-auth` (^7.5.0) - `STORE_ERROR_CODES`
-- `@mcp-abap-adt/interfaces-utils` (^1.1.0) - `ILogger`
+- `@mcp-abap-adt/interfaces-utils` (^1.1.1) - `ILogger`
 - `dotenv` - Environment variable parsing
 
 ## License
