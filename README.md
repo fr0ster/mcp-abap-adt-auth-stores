@@ -19,7 +19,7 @@ This package implements the `IServiceKeyStore` and `ISessionStore` contracts fro
 
 | Store | Holds | Implementations here |
 |---|---|---|
-| `IServiceKeyStore` — the **means**: what is used to obtain a session secret | the client (`uaaUrl`, `uaaClientId`, `uaaClientSecret`), or a client certificate (`getClientCertificate`, 3.3.0); `authType`, `grantType`; basic's `username` / `password`; the `snc*`, `oidc*` and `saml*` settings; `serviceUrl`, `sapClient`, `language` | `AbapServiceKeyStore`, `XsuaaServiceKeyStore` (SAP service key JSON), `EnvDestinationStore` (`<dir>/<destination>.env`) |
+| `IServiceKeyStore` — the **means**: what is used to obtain a session secret | the client (`uaaUrl`, `uaaClientId`, `uaaClientSecret`), or a client certificate (`getClientCertificate`, 3.3.0); `authType`, `grantType`; basic's `username` / `password`; the `snc*`, `oidc*` and `saml*` settings; `serviceUrl`, `sapClient`, `language`; the RFC address (`ashost`, `sysnr`, `mshost`, `msserv`, `sysid`, `group`, `saprouter`, 5.1.0) | `AbapServiceKeyStore`, `XsuaaServiceKeyStore` (SAP service key JSON), `EnvDestinationStore` (`<dir>/<destination>.env`) |
 | `ISessionStore` — the **secret** that authorizes within a session | `authorizationToken` or `sessionCookies`, their `expiresAt`, `refreshToken` — and what the credential is bound to, `issuedFor` and `issuedBy` (3.1.0) | `AbapSessionStore`, `XsuaaSessionStore`, `EnvFileSessionStore` (files), `SafeAbapSessionStore`, `SafeXsuaaSessionStore` (memory) |
 
 A key store never answers a secret, and a session store refuses to hold means. `basic` and `snc` destinations obtain no session secret: their session holds nothing.
@@ -267,6 +267,19 @@ await sessionStore.saveSession('TRIAL', {
 - **Writes** (`setDestination`, `deleteDestination`): only its means keys. A secret field, or any field that is not means, is refused with a `RefusedFieldsError`; a malformed value (an unknown `authType` or `grantType`, a scope with whitespace, a non-boolean `samlIdpInitiated`) with an `InvalidConfigError` naming the field.
 - **Destination names** are file names: one containing `/`, `\` or `..` is refused (`InvalidConfigError`) by every store that builds a path from it — `EnvDestinationStore`, `AbapSessionStore`, `XsuaaSessionStore` — for reads and writes. `''` is the file named `.env`. (`forFile` and `EnvFileSessionStore` do not use the name.)
 - **Key names**: `variables: ABAP_DESTINATION_VARS` (the default) or `XSUAA_DESTINATION_VARS`.
+- **The RFC address** (5.1.0) is seven means of `IConnectionConfig` (interfaces-auth-broker 1.4.0) — `AddressField`: an application server (`ashost`, `sysnr`) or a message server (`mshost` with `msserv` and/or `sysid`, and `group`), and a `saprouter` for either. Read, filled from the fallback, written and removed like every means field, as stated: the store requires none, refuses none and derives none (no system number from a URL's port, no default group) — which keys an RFC destination needs, and that it states one address, is the consumer's to check.
+
+  | Field | `ABAP_DESTINATION_VARS` | `XSUAA_DESTINATION_VARS` |
+  |---|---|---|
+  | `ashost` — the application server host | `SAP_ASHOST` | `XSUAA_ASHOST` |
+  | `sysnr` — its system number, e.g. `00` | `SAP_SYSNR` | `XSUAA_SYSNR` |
+  | `mshost` — the message server host | `SAP_MSHOST` | `XSUAA_MSHOST` |
+  | `msserv` — the message server's service or port | `SAP_MSSERV` | `XSUAA_MSSERV` |
+  | `sysid` — the system id naming the message server's service | `SAP_SYSID` | `XSUAA_SYSID` |
+  | `group` — the logon group of the message server | `SAP_GROUP` | `XSUAA_GROUP` |
+  | `saprouter` — the SAProuter string | `SAP_SAPROUTER` | `XSUAA_SAPROUTER` |
+
+  The seven are optional in `DestinationVariables`, and `MeansField` does not include them, so a custom map written for 5.0 still compiles. Such a map carries no address: it reads none of the seven, and a write carrying one is refused (`InvalidConfigError` naming the field) rather than dropped.
 - **A client certificate** (3.3.0) is three means of this store's own — `CertificateField`: `uaaClientCertPath`, `uaaClientKeyPath`, `uaaCertUrl`. Two paths and a URL, never PEM: the files are the user's own and are read only by `getClientCertificate`.
 
   | Field | `ABAP_DESTINATION_VARS` | `XSUAA_DESTINATION_VARS` |
@@ -295,6 +308,17 @@ SAP_GRANT_TYPE=authorization_code     # authorization_code | client_credentials 
                                       # token_exchange | saml2_pure | saml2_bearer | none
 SAP_CLIENT=100
 SAP_LANGUAGE=EN
+
+# the RFC address (5.1.0), as stated — an application server:
+SAP_ASHOST=sap-host.example.com
+SAP_SYSNR=00
+# or a message server (SAP_MSSERV and/or SAP_SYSID, and SAP_GROUP):
+# SAP_MSHOST=sap-ms.example.com
+# SAP_MSSERV=3600
+# SAP_SYSID=NPL
+# SAP_GROUP=SPACE
+# and, for either, a SAProuter:
+# SAP_SAPROUTER=/H/router.example.com/S/3299/H/
 
 # basic
 SAP_USERNAME=DEVELOPER
@@ -365,6 +389,7 @@ A file written by auth-stores 2.x (or auth-broker 3.x) holds means and secret to
 |---|---|---|
 | `SAP_JWT_TOKEN`, `SAP_SESSION_COOKIES_B64`, `SAP_REFRESH_TOKEN` (and the new `SAP_EXPIRES_AT`, and 3.1.0's `SAP_ISSUED_FOR` / `SAP_ISSUED_BY`) | secret | the session store |
 | `SAP_URL`, `SAP_AUTH_TYPE`, `SAP_USERNAME`, `SAP_PASSWORD`, `SAP_SNC_*`, `SAP_UAA_URL`, `SAP_UAA_CLIENT_ID`, `SAP_UAA_CLIENT_SECRET`, `SAP_CLIENT`, `SAP_LANGUAGE` | means | `EnvDestinationStore`, pointed at the same directory |
+| `SAP_ASHOST`, `SAP_SYSNR`, `SAP_MSHOST`, `SAP_MSSERV`, `SAP_SYSID`, `SAP_GROUP`, `SAP_SAPROUTER` — not 2.x keys: read from 5.1.0 on, as stated | means | `EnvDestinationStore` |
 
 A session write rewrites only the secret keys, so a 2.x file stays a complete 2.x file. Its credential has no binding keys beside it, so a session store refuses the record (`StorageError`, `record-format`; see *The store validates its record*): regenerate the session with `mcp-auth`, or write a new credential, which replaces the secret keys and leaves the means lines as they are. A 2.x `basic` or `snc` file is a complete destination as it is. A 2.x `jwt` or `saml` file states no grant — 2.x never wrote one — so add `SAP_GRANT_TYPE` (by hand, or through `setDestination`). A 3.x public-client file (`mcp-sso` stripped its `__public__` secret line) has no `SAP_UAA_CLIENT_SECRET`; from 3.2.0 its client is answered with the secret `''`, a public client, as it is. A file without `SAP_AUTH_TYPE` read with a service key fallback takes the key's `jwt` — see *Infers nothing* above.
 
