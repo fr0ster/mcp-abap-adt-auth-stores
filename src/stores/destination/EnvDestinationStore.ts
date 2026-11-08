@@ -4,7 +4,9 @@
  * An `IServiceKeyStore` for where a destination states how it obtains its
  * session secret when there is no SAP service key, or the key cannot say
  * (auth-stores 3.0.0): the type and grant, a user and password, the SNC, OIDC
- * and SAML settings, the client, the URL, `sapClient`, `language`. It answers
+ * and SAML settings, the client, the URL, `sapClient`, `language`, and the RFC
+ * address (5.1.0: `ashost`, `sysnr`, `mshost`, `msserv`, `sysid`, `group`,
+ * `saprouter` — `SAP_ASHOST` … `SAP_SAPROUTER`, or `XSUAA_…`). It answers
  * means only — never a token, cookies, an expiry or a refresh token: those are
  * the session store's.
  *
@@ -83,6 +85,25 @@ import { DESTINATION_GRANTS } from '../keyStoreOptions';
 const CLIENT_FIELDS = ['uaaUrl', 'uaaClientId', 'uaaClientSecret'] as const;
 type ClientField = (typeof CLIENT_FIELDS)[number];
 
+/**
+ * The RFC address (5.1.0): an application server (`ashost`, `sysnr`) or a
+ * message server (`mshost`, `msserv`, `sysid`, `group`), and a `saprouter`
+ * for either. Means like any other, read and written as stated; the store
+ * requires and refuses none of them — the consumer validates. Optional in a
+ * variables map, so a map written for 5.0 still type-checks; a map without
+ * them reads none and refuses to write one.
+ */
+const ADDRESS_FIELDS = [
+  'ashost',
+  'sysnr',
+  'mshost',
+  'msserv',
+  'sysid',
+  'group',
+  'saprouter',
+] as const satisfies readonly (keyof IConnectionConfig)[];
+export type AddressField = (typeof ADDRESS_FIELDS)[number];
+
 /** Every means field of `IConnectionConfig`. */
 const CONNECTION_FIELDS = [
   'serviceUrl',
@@ -115,6 +136,7 @@ const CONNECTION_FIELDS = [
   'samlIdpInitiated',
   'samlClockSkewMs',
   'samlTokenUrl',
+  ...ADDRESS_FIELDS,
 ] as const satisfies readonly (keyof IConnectionConfig)[];
 type ConnectionField = (typeof CONNECTION_FIELDS)[number];
 
@@ -130,11 +152,20 @@ const CERT_FIELDS = [
 ] as const;
 export type CertificateField = (typeof CERT_FIELDS)[number];
 
-/** The means fields of `IConfig`: the connection and the client. */
-export type MeansField = ConnectionField | ClientField;
+/**
+ * The means fields of `IConfig` a variables map must name: the connection
+ * and the client, without the RFC address, which a map may leave out.
+ */
+export type MeansField = Exclude<ConnectionField, AddressField> | ClientField;
 
 /** Every field this store keeps: `IConfig`'s means and its own certificate. */
-type StoredField = MeansField | CertificateField;
+type StoredField = ConnectionField | ClientField | CertificateField;
+
+/** The fields a variables map may leave out: a map without one keeps none. */
+const OPTIONAL_KEY_FIELDS: readonly (CertificateField | AddressField)[] = [
+  ...CERT_FIELDS,
+  ...ADDRESS_FIELDS,
+];
 
 const STORED_FIELDS: readonly StoredField[] = [
   ...CONNECTION_FIELDS,
@@ -145,10 +176,12 @@ const STORED_FIELDS: readonly StoredField[] = [
 /**
  * The env key of every means field. The three certificate keys are optional,
  * so a map written for 3.2.0 still type-checks; a map without them supports
- * no certificate destination.
+ * no certificate destination. The seven RFC address keys are optional the
+ * same way (5.1.0): a map without them carries no address.
  */
 export type DestinationVariables = Readonly<
-  Record<MeansField, string> & Partial<Record<CertificateField, string>>
+  Record<MeansField, string> &
+    Partial<Record<CertificateField | AddressField, string>>
 >;
 
 const SUFFIXES: Record<StoredField, string> = {
@@ -188,6 +221,13 @@ const SUFFIXES: Record<StoredField, string> = {
   uaaClientCertPath: 'UAA_CLIENT_CERT_PATH',
   uaaClientKeyPath: 'UAA_CLIENT_KEY_PATH',
   uaaCertUrl: 'UAA_CERT_URL',
+  ashost: 'ASHOST',
+  sysnr: 'SYSNR',
+  mshost: 'MSHOST',
+  msserv: 'MSSERV',
+  sysid: 'SYSID',
+  group: 'GROUP',
+  saprouter: 'SAPROUTER',
 };
 
 function withPrefix(
@@ -204,7 +244,9 @@ function withPrefix(
 /**
  * The ABAP key names: the 2.x session keys (`SAP_URL`, `SAP_AUTH_TYPE`,
  * `SAP_USERNAME`, `SAP_PASSWORD`, `SAP_SNC_*`, `SAP_UAA_*`, `SAP_CLIENT`,
- * `SAP_LANGUAGE`) plus `SAP_GRANT_TYPE`, `SAP_OIDC_*` and `SAP_SAML_*`.
+ * `SAP_LANGUAGE`) plus `SAP_GRANT_TYPE`, `SAP_OIDC_*`, `SAP_SAML_*` and the
+ * RFC address `SAP_ASHOST`, `SAP_SYSNR`, `SAP_MSHOST`, `SAP_MSSERV`,
+ * `SAP_SYSID`, `SAP_GROUP`, `SAP_SAPROUTER`.
  * `samlIdpCertificates` is `SAP_SAML_IDP_CERTIFICATES_B64`: each certificate
  * base64-encoded, comma-separated (a PEM spans lines; an env value may not).
  */
@@ -221,7 +263,7 @@ export const XSUAA_DESTINATION_VARS: DestinationVariables = withPrefix(
 
 /** A means write: a value sets a field, `null` removes it, absent leaves it. */
 export type DestinationMeans = {
-  [K in MeansField]?: IConfig[K] | null;
+  [K in MeansField | AddressField]?: IConfig[K] | null;
 } & {
   [K in CertificateField]?: string | null;
 };
@@ -539,7 +581,7 @@ export class EnvDestinationStore implements IServiceKeyStore {
     }
     const given = (field: StoredField): unknown =>
       (means as Record<string, unknown>)[field];
-    const unnamed = CERT_FIELDS.filter(
+    const unnamed = OPTIONAL_KEY_FIELDS.filter(
       (field) => this.variables[field] === undefined && given(field) != null,
     );
     if (unnamed.length > 0) {

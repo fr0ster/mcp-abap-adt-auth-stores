@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.0] - 2026-11-08
+
+`EnvDestinationStore` carries the RFC address of a destination as means.
+
+### Added
+- **The RFC address as means.** The seven address fields of `IConnectionConfig`
+  (interfaces-auth-broker 1.4.0) — `ashost`, `sysnr`, `mshost`, `msserv`, `sysid`,
+  `group`, `saprouter` — are read by `getConnectionConfig`, filled from the fallback
+  field by field (a field the file states, `''` included, wins), and written and
+  removed by `setDestination` / `deleteDestination`, as every other means field. Their
+  variables are `SAP_ASHOST`, `SAP_SYSNR`, `SAP_MSHOST`, `SAP_MSSERV`, `SAP_SYSID`,
+  `SAP_GROUP`, `SAP_SAPROUTER` in `ABAP_DESTINATION_VARS`, and `XSUAA_…` alike in
+  `XSUAA_DESTINATION_VARS`. The values are answered as stated: the store requires,
+  refuses and derives none of them — the consumer validates the address.
+- The type `AddressField`, the seven field names.
+
+### Changed
+- Dependencies `@mcp-abap-adt/interfaces-auth-broker` `^1.4.0` (was `^1.3.0`), the
+  release that declares the seven fields, and `@mcp-abap-adt/interfaces-auth-sap`
+  `^3.3.0 || ^4.0.0` (was `^3.3.0`). The lockfile is refreshed from the registry.
+
+### Migration
+- **Nothing to change** for a consumer of the shipped variable maps: a file without
+  the seven variables reads as before.
+- **A custom `variables` map** keeps compiling: the seven keys are optional in
+  `DestinationVariables`, and `MeansField` does not include them. Such a map carries
+  no address — it reads none of the seven, and a `setDestination` carrying one is
+  refused with an `InvalidConfigError` naming the field. Add the keys to the map to
+  carry the address.
+
 ## [5.0.1] - 2026-10-12
 
 ### Changed
